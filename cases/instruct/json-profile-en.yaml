@@ -1,0 +1,34 @@
+# instruct 次元 — 上の ja 版の対訳。差分から ja_penalty を出す
+id: instruct-json-profile-en
+dim: instruct
+lang: en
+pair: instruct-json-profile-ja
+
+prompt: |
+  Extract the name, age, and occupation from the following introduction and
+  output them as JSON. Output nothing but the JSON.
+
+  "I'm Ichiro Tanaka. I'm 42 and I work as a welder at a shipyard."
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_schema
+  schema:
+    type: object
+    required: [name, age, occupation]
+    properties:
+      name: {type: string}
+      age: {type: integer}
+      occupation: {type: string}
+  # occupation は入れない（"welder" も "welder at a shipyard" も正答）
+  expect:
+    name: Ichiro Tanaka
+    age: 42

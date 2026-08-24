@@ -1,0 +1,47 @@
+[project]
+name = "quirkbench"
+version = "0.1.0.dev0"
+description = "Profile the quirks of local LLMs served by Ollama — what each model is good and bad at, and how it fails."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    # Ollama は stdlib の urllib で叩く。HTTP クライアントを依存に足さない。
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+qb = "quirkbench.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quirkbench"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "RUF"]
+# C901（循環的複雑度）は選ばない。ここで超えるのは minischema.validate /
+# parse.find_balanced のような**平坦な分岐の列**（schema キーワード・括弧の状態機械）で、
+# 分割しても複雑さが別の関数へ移るだけになる。判断が要る分岐は別途レビューで見る。
+ignore = ["RUF001", "RUF002", "RUF003"]  # 日本語コメント中の全角記号を曖昧文字として弾かない
+
+[tool.ruff.lint.per-file-ignores]
+# 変異させる文字列はソースと 1 文字も違ってはいけないので折り返せない
+"tools/mutate.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/quirkbench"]
+ignore_missing_imports = true

@@ -1,0 +1,21 @@
+# 実行の生データ。サイズが大きく、環境依存の実測値なので追跡しない。
+# ディレクトリ自体は残す（初回実行前に mkdir を強いないため）
+runs/*
+reports/*
+!runs/.gitkeep
+!reports/.gitkeep
+
+# Python
+__pycache__/
+.coverage
+coverage.xml
+htmlcov/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS
+.DS_Store

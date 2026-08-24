@@ -1,0 +1,48 @@
+# 検証を機械で回す。
+#
+# ここに置いていない検査は「やったことがある」だけで、いずれ静かに腐る。
+# 実際 S2 では、型チェックを一度も掛けていなかったことが後から見つかった。
+#
+# ollama は CI に無いので、ここで回るのは生成を伴わない検査だけ。
+# 実モデルでの計測は手元で行う（README の「開発」参照）。
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv を入れる
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 依存を同期する
+        run: uv sync --all-extras --dev
+
+      - name: lint
+        run: uv run ruff check src tests tools
+
+      - name: 整形の確認
+        run: uv run ruff format --check src tests tools
+
+      - name: 型
+        run: uv run mypy
+
+      - name: テストとカバレッジ
+        run: uv run pytest -q --cov=src/quirkbench --cov-report=term --cov-fail-under=90
+
+      # カバレッジは「その行を通ったか」しか見ない。ガードが実際に呼ばれて
+      # いるかは別に測る。全部落ちるのが正常で、生き残りが出たら失敗させる。
+      - name: ミューテーション
+        run: uv run python tools/mutate.py
+
+      - name: 同梱ケースが検証を通ること
+        run: uv run python -c "from pathlib import Path; from quirkbench.cases import load_cases; print(len(load_cases(Path('cases'))), 'ケース OK')"

@@ -1,0 +1,29 @@
+# ideate 次元 — 「発想の質」は測らない。制約内多様性を測る（FLB-QB-001 §5）
+id: ideate-coffee-shop-ja
+dim: ideate
+lang: ja
+
+prompt: |
+  住宅街の中にある、席数 12 の小さな喫茶店の名前を 5 つ考えてください。
+  番号つきの箇条書きで、1 行に 1 案だけ書いてください。説明は不要です。
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: ja
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  # 件数の数え方。count_mismatch と同一の実装を使う
+  count: {n: 5, pattern: numbered_list}
+  # off-topic ゲートに使うお題文。案とこの文の cos 類似度で足切りする
+  topic: 住宅街にある席数12の小さな喫茶店の名前
+  # 網羅性: 想定観点をどれだけ含むか（部分一致・正規化して照合）
+  coverage_terms:
+    - [珈琲, コーヒー, カフェ, 喫茶]
+    - [家, 街, 町, 隣, 路地, 角]
+    - [小, 静, 灯, 窓, 椅子, 席]

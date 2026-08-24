@@ -1,0 +1,41 @@
+# instruct 次元 — 形式制約つきの依頼。日本語版。
+# 対訳の en 版と対で ja_penalty を出す（FLB-QB-001 §4）
+id: instruct-json-profile-ja
+dim: instruct
+lang: ja
+pair: instruct-json-profile-en
+
+prompt: |
+  次の人物紹介から、名前・年齢・職業を抜き出して JSON で出力してください。
+  JSON 以外は何も書かないでください。
+
+  「田中一郎です。42歳で、造船所の溶接工をしています。」
+
+# Ollama options の上書き。既定は runner 側が持つ
+options:
+  num_predict: 256
+
+# 失敗型の判定手続きの宣言（FLB-QB-001 §6-B）
+# ここに書かれていない型は not_applicable になり、分布の母数に入らない
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none        # JSON は言語を持たないので wrong_language を適用しない
+  min_tokens: 4
+
+# 採点手続き
+score:
+  kind: json_schema
+  schema:
+    type: object
+    required: [name, age, occupation]
+    properties:
+      name: {type: string}
+      age: {type: integer}
+      occupation: {type: string}
+  # schema を満たしたうえで値まで合っているか（部分点）
+  # occupation は入れない。「溶接工」も「造船所の溶接工」も正答なので、
+  # 完全一致を要求すると正解を不正解にする
+  expect:
+    name: 田中一郎
+    age: 42
