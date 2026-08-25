@@ -18,6 +18,7 @@ from .gate import (
 from .keys import runner_fingerprint
 from .lint import lint
 from .ollama import DEFAULT_HOST, Ollama, OllamaError
+from .report import InconsistentRun, aggregate, render_compare, render_profile
 from .runner import DigestDrift, run
 from .sandbox import package_sha256
 from .scoring import score_run
@@ -80,6 +81,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="ケース定義のゲート。1 件でも落ちたら停止する",
     )
     lint_cmd.add_argument("--cases", type=Path, default=Path("cases"))
+
+    report_cmd = sub.add_parser(
+        "report",
+        help="プロファイル表と比較ビューを出す（1 つの run だけを読む）",
+    )
+    report_cmd.add_argument("--run", default="main")
+    report_cmd.add_argument("--cases", type=Path, default=Path("cases"))
+    report_cmd.add_argument("--runs", type=Path, default=Path("runs"))
+    report_cmd.add_argument("--out", type=Path, default=Path("reports"))
+    report_cmd.add_argument(
+        "--all-seeds",
+        action="store_true",
+        help="比較ビューに全 seed を出す（既定は最小 seed の 1 本）",
+    )
 
     status = sub.add_parser("status", help="run の進捗を表示する")
     status.add_argument("--run", default="main")
@@ -190,6 +205,48 @@ def _cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_report(args: argparse.Namespace) -> int:
+    """**1 つの run だけを読む**（§14.1）。複数 run の結合はしない。
+
+    残差はケース内でモデル間の平均を引くので、run をまたぐと
+    **引き算の相手が別の測定条件で測られたもの**になる。
+    """
+    cases = load_cases(args.cases)
+    store = RunStore(args.runs, args.run)
+    if not store.dir.exists():
+        print(f"run {args.run!r} は存在しない", file=sys.stderr)
+        return 2
+
+    agg = aggregate(store, cases)
+    out_dir = args.out / args.run
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "report.md").write_text(render_profile.render(agg), encoding="utf-8")
+    seed = render_compare.pick_seed(store)
+    (out_dir / "compare.md").write_text(
+        render_compare.render(store, cases, seed=seed, all_seeds=args.all_seeds),
+        encoding="utf-8",
+    )
+
+    print(f"{out_dir / 'report.md'}")
+    print(f"{out_dir / 'compare.md'}")
+    excluded = [c for c in agg.cases if not c.discriminating]
+    print(
+        f"モデル {len(agg.models)} / ケース {len(agg.cases)}"
+        f"（識別力なし {len(excluded)}）/ 生成 {agg.total_generations}"
+    )
+    # 黙って落とした件数は必ず出す（§14.2）
+    if agg.unscored:
+        print(f"  警告: 採点行が見つからない生成が {agg.unscored} 件。qb score を回したか")
+    for stat in excluded:
+        print(f"  識別力なし: {stat.case_id}（{stat.degenerate_kind}）")
+    for dim in agg.dims:
+        if not dim.measurable:
+            print(f"  {dim.dim}: 識別力のあるケースが 0 件なので z を出していない")
+        elif not dim.z_is_trusted:
+            print(f"  {dim.dim}: 識別力のあるケースが {dim.discriminating_cases} 件。z は要注意")
+    return 0
+
+
 def _cmd_lint(args: argparse.Namespace) -> int:
     cases = load_cases(args.cases)
     issues = lint(cases)
@@ -229,11 +286,13 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_run(args)
         if args.command == "score":
             return _cmd_score(args)
+        if args.command == "report":
+            return _cmd_report(args)
         if args.command == "status":
             return _cmd_status(args)
         if args.command == "lint-cases":
             return _cmd_lint(args)
-    except (CaseError, OllamaError, RunLocked, DigestDrift) as exc:
+    except (CaseError, OllamaError, RunLocked, DigestDrift, InconsistentRun) as exc:
         print(f"エラー: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:

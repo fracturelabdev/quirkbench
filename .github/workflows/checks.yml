@@ -65,6 +65,39 @@ jobs:
       - name: ケースのゲート
         run: uv run qb lint-cases
 
+      # レポートは ollama が要らない（生成済みの JSONL しか読まない）ので
+      # ここで回せる。**表が壊れても pytest だけでは気づけない** —
+      # 集計は通るがレンダリングで落ちる形の欠陥を、実際に叩いて捕まえる。
+      - name: レポートが生成できること
+        run: |
+          uv run python - <<'EOF'
+          import json, pathlib
+          run = pathlib.Path("runs/ci")
+          run.mkdir(parents=True, exist_ok=True)
+          base = {
+              "ollama_version": "0.0.0", "case_id": "instruct-json-profile-en",
+              "seed": 1000, "done_reason": "stop", "eval_count": 10,
+              "eval_duration_ns": 10**8, "prompt_eval_count": 5,
+              "prompt_eval_duration_ns": 10**7, "load_duration_ns": 10**6,
+              "wall_seconds": 0.1,
+          }
+          # 2 モデルで差を付ける。差が無いと識別力なしになり、
+          # z を出す経路が一度も通らない
+          rows = [
+              {**base, "gen_id": "g0", "model": "m-a", "model_digest": "d-a",
+               "response": '{"name": "Ichiro Tanaka", "age": 42, "occupation": "welder"}'},
+              {**base, "gen_id": "g1", "model": "m-b", "model_digest": "d-b",
+               "response": "not json at all"},
+          ]
+          (run / "generations.jsonl").write_text(
+              "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+          EOF
+          uv run qb score --run ci --dims instruct
+          uv run qb report --run ci
+          test -s reports/ci/report.md
+          test -s reports/ci/compare.md
+          grep -q "次元プロファイル" reports/ci/report.md
+
       # src が tests を import していないこと。stub 実行器が本番の import 経路から
       # 到達できると、**サンドボックスを通さない実行**が 1 行で作れてしまう。
       - name: stub がテスト側に閉じていること

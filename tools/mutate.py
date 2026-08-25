@@ -275,6 +275,123 @@ M = [
         "    elif score_count != failure_count:",
         "    elif False:",
     ),
+    # ---- S5: レポートと判断の関門（FLB-QB-001 §14）
+    (
+        "report/aggregate.py",
+        "識別力なしのケースも残差に入れる（難易度の相殺が壊れる）",
+        "        usable = [c for c in in_dim if c.discriminating]",
+        "        usable = list(in_dim)",
+    ),
+    (
+        "report/aggregate.py",
+        "σ が 0 でも z を 0 として返す（「測れていない」が「差が無い」に化ける）",
+        "                z_by_model=({m: v / sd for m, v in residual_mean.items()} if sd > 0 else {}),",
+        "                z_by_model={m: 0.0 for m in residual_mean},",
+    ),
+    (
+        "report/aggregate.py",
+        "σ を標本標準偏差にする（n が小さいとき z が縮む）",
+        "        sd = statistics.pstdev(flat) if len(flat) > 1 else 0.0",
+        "        sd = statistics.stdev(flat) if len(flat) > 1 else 0.0",
+    ),
+    (
+        "report/aggregate.py",
+        "識別力の判定を厳密比較にする（浮動小数の最下位ビットで誤判定）",
+        "        discriminating = bool(values) and (max(values) - min(values)) >= SAME_SCORE_EPSILON",
+        "        discriminating = bool(values) and len(set(values)) > 1",
+    ),
+    (
+        "report/aggregate.py",
+        "ceiling と floor の区別をやめる（次の手が同じになる）",
+        '    if all(v >= 1.0 - SAME_SCORE_EPSILON for v in values):\n        return "ceiling"\n',
+        "",
+    ),
+    (
+        "report/aggregate.py",
+        "run 内の digest ずれを見逃す",
+        "    if drifted:",
+        "    if False:",
+    ),
+    (
+        "report/aggregate.py",
+        "ollama のバージョンずれを見逃す",
+        "    if len(versions) > 1:",
+        "    if False:",
+    ),
+    (
+        "report/aggregate.py",
+        "採点行の無い生成を数えない（採点し直し忘れが見えなくなる）",
+        "    return best, len(generations) - len(best)",
+        "    return best, 0",
+    ),
+    (
+        "report/aggregate.py",
+        "読み出しで scorer_version を見ない（古い採点を採りうる）",
+        '        rank = (int(row.get("scorer_version") or 0), str(row.get("ts") or ""))',
+        '        rank = (0, str(row.get("ts") or ""))',
+    ),
+    (
+        "report/aggregate.py",
+        "check_hash の一致を見ない（現在のケース定義と違う採点を採る）",
+        '        if case is None or row.get("check_hash") != case.check_hash:',
+        "        if case is None:",
+    ),
+    (
+        "report/aggregate.py",
+        "tok/s を行ごとの平均にする（短い応答の速さを測る）",
+        "                tokens_per_second=eval_count / (eval_ns / 1e9) if eval_ns else 0.0,",
+        "                tokens_per_second=statistics.mean(\n"
+        "                    [\n"
+        '                        int(g.get("eval_count") or 0) / (int(g["eval_duration_ns"]) / 1e9)\n'
+        "                        for g in rows\n"
+        '                        if g.get("eval_duration_ns")\n'
+        "                    ]\n"
+        "                )\n"
+        "                if eval_ns\n"
+        "                else 0.0,",
+    ),
+    (
+        "report/aggregate.py",
+        "load を平均にする（最初の 1 件のモデルロードに引きずられる）",
+        "                load_ms_median=statistics.median(loads) if loads else 0.0,",
+        "                load_ms_median=statistics.mean(loads) if loads else 0.0,",
+    ),
+    (
+        "report/aggregate.py",
+        "対訳の相手が run に無くても ja_penalty を出す",
+        "        if other is None:\n            continue\n",
+        "",
+    ),
+    (
+        "report/render_profile.py",
+        "z が 1 ケースで決まっている印を消す",
+        '    mark = "" if dim.z_is_trusted else UNTRUSTED_MARK',
+        '    mark = ""',
+    ),
+    (
+        "report/render_profile.py",
+        "母数 0 を 0/0 として出す（0% と読める）",
+        '                cells.append(f"{numer} / {denom}" if denom else NA)',
+        '                cells.append(f"{numer} / {denom}")',
+    ),
+    (
+        "report/render_profile.py",
+        "候補階層を主表に混ぜる",
+        "        tags = [t for t in agg.failure_counts if failures.TIER.get(t) == tier]",
+        "        tags = list(agg.failure_counts)",
+    ),
+    (
+        "report/render_compare.py",
+        "フェンスの長さを本文に合わせない（生出力のフェンスで表示が壊れる）",
+        '    marker = "`" * max(3, longest + 1)',
+        '    marker = "```"',
+    ),
+    (
+        "report/render_compare.py",
+        "seed で絞らない（比較の条件が揃わない）",
+        '        rows = [r for r in rows if r.get("seed") is not None and int(r["seed"]) == seed]',
+        "        rows = list(rows)",
+    ),
 ]
 
 BOUNDARY = [

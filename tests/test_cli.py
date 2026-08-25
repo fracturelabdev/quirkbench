@@ -248,3 +248,158 @@ def test_score_refuses_code_gen_on_non_darwin(tmp_path, monkeypatch, capsys) -> 
     )
     assert code == 2
     assert "macOS 専用" in capsys.readouterr().err
+
+
+# ------------------------------------------------------------- report
+
+
+def _write_profile_run(runs: Path) -> None:
+    """2 モデル × 2 ケース。片方は全モデル満点で識別力なしにする。"""
+    run_dir = runs / "r1"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    lines = []
+    index = 0
+    for model in ["m-a", "m-b"]:
+        for case_id in ["c1", "c2"]:
+            # c1 だけモデル間で応答を変えて識別力を持たせる。c2 は両モデルとも
+            # 正解にして「全モデル満点（ceiling）」を作る
+            wrong = case_id == "c1" and model == "m-b"
+            response = '{"age": 1}' if wrong else '{"age": 42}'
+            index += 1
+            lines.append(
+                json.dumps(
+                    {
+                        "gen_id": f"g{index}",
+                        "model": model,
+                        "model_digest": f"digest-{model}",
+                        "ollama_version": "0.32.13",
+                        "case_id": case_id,
+                        "seed": 1000,
+                        "response": response,
+                        "done_reason": "stop",
+                        "eval_count": 20,
+                        "eval_duration_ns": 100_000_000,
+                        "prompt_eval_count": 5,
+                        "prompt_eval_duration_ns": 10_000_000,
+                        "load_duration_ns": 1_000_000,
+                        "wall_seconds": 0.1,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+    (run_dir / "generations.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_two_cases(cases: Path) -> None:
+    cases.mkdir(parents=True, exist_ok=True)
+    for case_id in ["c1", "c2"]:
+        (cases / f"{case_id}.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": case_id,
+                    "dim": "instruct",
+                    "lang": "ja",
+                    "prompt": f"p-{case_id}",
+                    "failure": {"format": "json"},
+                    "score": {
+                        "kind": "json_schema",
+                        "schema": {"type": "object"},
+                        "expect": {"age": 42},
+                    },
+                },
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+
+
+def test_report_writes_both_files(tmp_path, capsys):
+    cases, runs, out = tmp_path / "cases", tmp_path / "runs", tmp_path / "reports"
+    _write_two_cases(cases)
+    _write_profile_run(runs)
+    cli.main(["score", "--run", "r1", "--cases", str(cases), "--runs", str(runs)])
+    capsys.readouterr()
+
+    rc = cli.main(
+        ["report", "--run", "r1", "--cases", str(cases), "--runs", str(runs), "--out", str(out)]
+    )
+    assert rc == 0
+    assert (out / "r1" / "report.md").exists()
+    assert (out / "r1" / "compare.md").exists()
+
+
+def test_report_names_the_non_discriminating_case(tmp_path, capsys):
+    """**識別力なしは件数だけでなく ID と理由を出す**（§14.3）。"""
+    cases, runs, out = tmp_path / "cases", tmp_path / "runs", tmp_path / "reports"
+    _write_two_cases(cases)
+    _write_profile_run(runs)
+    cli.main(["score", "--run", "r1", "--cases", str(cases), "--runs", str(runs)])
+    capsys.readouterr()
+
+    cli.main(
+        ["report", "--run", "r1", "--cases", str(cases), "--runs", str(runs), "--out", str(out)]
+    )
+    stdout = capsys.readouterr().out
+    assert "識別力なし: c2（ceiling）" in stdout
+
+
+def test_report_warns_when_z_rests_on_one_case(tmp_path, capsys):
+    cases, runs, out = tmp_path / "cases", tmp_path / "runs", tmp_path / "reports"
+    _write_two_cases(cases)
+    _write_profile_run(runs)
+    cli.main(["score", "--run", "r1", "--cases", str(cases), "--runs", str(runs)])
+    capsys.readouterr()
+
+    cli.main(
+        ["report", "--run", "r1", "--cases", str(cases), "--runs", str(runs), "--out", str(out)]
+    )
+    assert "z は要注意" in capsys.readouterr().out
+
+
+def test_report_warns_about_unscored_generations(tmp_path, capsys):
+    """**採点し直し忘れに気づけるようにする**（§14.2）。"""
+    cases, runs, out = tmp_path / "cases", tmp_path / "runs", tmp_path / "reports"
+    _write_two_cases(cases)
+    _write_profile_run(runs)
+
+    rc = cli.main(
+        ["report", "--run", "r1", "--cases", str(cases), "--runs", str(runs), "--out", str(out)]
+    )
+    assert rc == 0
+    assert "採点行が見つからない生成が 4 件" in capsys.readouterr().out
+
+
+def test_report_rejects_a_run_with_mixed_conditions(tmp_path, capsys):
+    """**差し引かれるのが難易度でなくなる**（§14.1）。"""
+    cases, runs, out = tmp_path / "cases", tmp_path / "runs", tmp_path / "reports"
+    _write_two_cases(cases)
+    _write_profile_run(runs)
+    with (runs / "r1" / "generations.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "gen_id": "drift",
+                    "model": "m-a",
+                    "model_digest": "SOMETHING-ELSE",
+                    "ollama_version": "0.32.13",
+                    "case_id": "c1",
+                    "seed": 1000,
+                }
+            )
+            + "\n"
+        )
+    rc = cli.main(
+        ["report", "--run", "r1", "--cases", str(cases), "--runs", str(runs), "--out", str(out)]
+    )
+    assert rc == 2
+    assert "モデルの中身が変わっている" in capsys.readouterr().err
+
+
+def test_report_on_missing_run_is_an_error(tmp_path, capsys):
+    cases = tmp_path / "cases"
+    _write_two_cases(cases)
+    rc = cli.main(
+        ["report", "--run", "nope", "--cases", str(cases), "--runs", str(tmp_path / "runs")]
+    )
+    assert rc == 2
+    assert "存在しない" in capsys.readouterr().err
