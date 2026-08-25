@@ -2,7 +2,10 @@
 
 scorer は失敗型の語彙を持たない。`failures.py` の語彙のタグを append するだけ。
 
-``SCORER_VERSION`` は採点ロジックを変えたら上げる。再採点は `scores.jsonl` への
+``SCORER_VERSION`` は**既存の採点結果が変わるときだけ**上げる。
+**次元を足しただけでは上げない** — 上げると既存の全行が同じ値のまま再採点され、
+「scorer を直したら結果がどう動いたか」を追うための版番号が、
+動いていない差分で埋まる（S4 で `ideate` を足したときの判断・§13）。再採点は `scores.jsonl` への
 追記だけで行い、レポートは gen_id ごとに version 最大の行を採るので、
 **過去の採点も残り「scorer を直したら結果がどう動いたか」がそのまま追える**。
 これは癖のプロファイリングという目的そのものに効く（FLB-QB-001 §10.2）。
@@ -19,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from ..cases import Case
+from ..embed import Embedder
 from ..parse import Parsed
 
 SCORER_VERSION = 2
@@ -63,9 +67,24 @@ class Executor(Protocol):
 
 
 class Scorer(Protocol):
-    """採点器のシグネチャ。``executor`` は**キーワード必須**で、既定値を持たない。"""
+    """採点器のシグネチャ。依存は**キーワード必須**で、既定値を持たない。
 
-    def __call__(self, parsed: Parsed, case: Case, *, executor: Executor | None) -> ScoreResult: ...
+    **2 つ目の依存（``embedder``）を並べたのは意図的**（§13.6）。
+    `Deps` のような入れ物にまとめるのは 2 個では先回りの抽象で、
+    §10.1a の「消費者を名指しできないものは足さない」に反する。
+
+    **引き金: 3 つ目の依存が来たら `Deps` にまとめる。** ここに書いておかないと、
+    4 個まで並んでから気づくことになる。
+    """
+
+    def __call__(
+        self,
+        parsed: Parsed,
+        case: Case,
+        *,
+        executor: Executor | None,
+        embedder: Embedder | None,
+    ) -> ScoreResult: ...
 
 
 class ScorerNotImplemented(NotImplementedError):
@@ -80,16 +99,36 @@ class ExecutorRequired(RuntimeError):
     """
 
 
+class EmbedderRequired(RuntimeError):
+    """代理指標の採点なのに埋め込み器が渡されていない。
+
+    **既定値でローカル計算に落とさない**（§13.6）。落とすと、埋め込みモデル
+    無しでもそれらしい数字が出る経路ができ、**多様性を測っていない run が
+    測ったものと同じ形で並ぶ**。``ExecutorRequired`` と同型。
+    """
+
+
 def _registry() -> dict[str, Scorer]:
     from .code_gen import score_pytest
+    from .ideate import score_ideate
     from .instruct import score_json_schema
 
-    return {"json_schema": score_json_schema, "pytest": score_pytest}
+    return {
+        "json_schema": score_json_schema,
+        "pytest": score_pytest,
+        "ideate": score_ideate,
+    }
 
 
-def score(parsed: Parsed, case: Case, *, executor: Executor | None = None) -> ScoreResult:
+def score(
+    parsed: Parsed,
+    case: Case,
+    *,
+    executor: Executor | None = None,
+    embedder: Embedder | None = None,
+) -> ScoreResult:
     kind = case.score["kind"]
     scorer = _registry().get(kind)
     if scorer is None:
         raise ScorerNotImplemented(kind)
-    return scorer(parsed, case, executor=executor)
+    return scorer(parsed, case, executor=executor, embedder=embedder)

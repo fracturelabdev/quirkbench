@@ -86,16 +86,31 @@ class Ollama:
         return self._request("/api/show", {"model": model})
 
     def model_info(self, model: str) -> ModelInfo:
-        """digest（/api/tags）と諸元（/api/show）を 1 つにまとめて返す。"""
+        """digest（/api/tags）と諸元（/api/show）を 1 つにまとめて返す。
+
+        **タグを省いた名前を ``:latest`` として解決する。** ollama 自身の規約で、
+        ``/api/generate`` と ``/api/embed`` は ``bge-m3`` を受け付けるが
+        ``/api/tags`` は ``bge-m3:latest`` としか名乗らない。解決しないと、
+        **生成は通るのに digest だけ引けない**という形で落ちる（S4 で実際に踏んだ）。
+
+        返す ``name`` は**解決後の名前**にする。``bge-m3`` と ``bge-m3:latest`` が
+        別の名前のまま指紋に入ると、同じモデルが書き方だけで別キーになる（§13.5）。
+        """
+        candidates = [model] if ":" in model else [model, f"{model}:latest"]
+        resolved = ""
         digest = ""
         for entry in self.tags():
-            if entry.get("model") == model or entry.get("name") == model:
+            names = {str(entry.get("model", "")), str(entry.get("name", ""))}
+            hit = next((c for c in candidates if c in names), None)
+            if hit is not None:
+                resolved = hit
                 digest = str(entry.get("digest", ""))
                 break
         if not digest:
             raise OllamaError(
                 f"モデル {model!r} が /api/tags に見つからない。ollama pull は済んでいるか"
             )
+        model = resolved
 
         shown = self.show(model)
         details = shown.get("details") or {}

@@ -47,7 +47,7 @@ NOT_JSON = "田中一郎さんは 42 歳の溶接工です。"
 
 
 def run(text: str):
-    return score_json_schema(parse(text, CASE.failure), CASE)
+    return score_json_schema(parse(text, CASE.failure), CASE, executor=None, embedder=None)
 
 
 @pytest.mark.parametrize(
@@ -99,7 +99,7 @@ def test_schema_failure_zeroes_a_matching_expect() -> None:
     次元の定義そのものが崩れる。
     """
     parsed = parse('{"name": "田中一郎", "age": 42}', CASE.failure)
-    result = score_json_schema(parsed, CASE)
+    result = score_json_schema(parsed, CASE, executor=None, embedder=None)
     assert result.sub_metrics["schema_ok"] is False
     assert result.sub_metrics["expect_matched"] == 1
     assert result.score == 0.0
@@ -122,7 +122,7 @@ def test_partial_credit_from_expect() -> None:
         Path("d.yaml"),
     )
     parsed = parse('{"name": "山田", "age": 42, "occupation": "溶接工"}', case.failure)
-    result = score_json_schema(parsed, case)
+    result = score_json_schema(parsed, case, executor=None, embedder=None)
     assert result.score == 0.5
     assert result.sub_metrics["expect_missed"] == ["name"]
 
@@ -139,7 +139,10 @@ def test_no_expect_means_schema_only() -> None:
         },
         Path("e.yaml"),
     )
-    assert score_json_schema(parse(GOOD, case.failure), case).score == 1.0
+    assert (
+        score_json_schema(parse(GOOD, case.failure), case, executor=None, embedder=None).score
+        == 1.0
+    )
 
 
 def test_fullwidth_value_still_matches() -> None:
@@ -160,7 +163,7 @@ def test_fullwidth_value_still_matches() -> None:
         Path("f.yaml"),
     )
     parsed = parse('{"name": "ﾀﾅｶ"}', case.failure)
-    assert score_json_schema(parsed, case).score == 1.0
+    assert score_json_schema(parsed, case, executor=None, embedder=None).score == 1.0
 
 
 def test_bool_expect_is_strict() -> None:
@@ -175,8 +178,14 @@ def test_bool_expect_is_strict() -> None:
         },
         Path("g.yaml"),
     )
-    assert score_json_schema(parse('{"ok": true}', case.failure), case).score == 1.0
-    assert score_json_schema(parse('{"ok": 1}', case.failure), case).score == 0.0
+
+    def run_one(text: str) -> float:
+        return score_json_schema(
+            parse(text, case.failure), case, executor=None, embedder=None
+        ).score
+
+    assert run_one('{"ok": true}') == 1.0
+    assert run_one('{"ok": 1}') == 0.0
 
 
 def test_registry_dispatch() -> None:
@@ -187,8 +196,8 @@ def test_unimplemented_kind_raises() -> None:
     from quirkbench.scorers import ScorerNotImplemented
 
     case = parse_case(
-        {"id": "h", "dim": "ideate", "lang": "ja", "prompt": "p", "score": {"kind": "ideate"}},
+        {"id": "h", "dim": "reason", "lang": "ja", "prompt": "p", "score": {"kind": "numeric"}},
         Path("h.yaml"),
     )
-    with pytest.raises(ScorerNotImplemented, match="ideate"):
+    with pytest.raises(ScorerNotImplemented, match="numeric"):
         score(parse("x", case.failure), case)

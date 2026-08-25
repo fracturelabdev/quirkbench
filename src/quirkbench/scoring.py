@@ -26,6 +26,8 @@ from . import execcache, failures, scorers
 from . import keys as _keys
 from .cases import Case
 from .clock import now_iso
+from .embed import Embedder
+from .embedcache import CachedEmbedder
 from .parse import parse
 from .store import RunStore
 
@@ -42,6 +44,10 @@ class ScoreSummary:
     #: S3 の完了条件（2 回目は実行 0 回）を機械で確かめるために持つ。
     exec_runs: int = 0
     exec_hits: int = 0
+    #: 実際に埋め込みを計算した本数と、キャッシュで済んだ本数。
+    #: S4 の完了条件（2 回目は計算 0 回）を機械で確かめるために持つ（§13.8）
+    embed_runs: int = 0
+    embed_hits: int = 0
 
 
 class _CachedExecutor:
@@ -100,7 +106,11 @@ class _CachedExecutor:
 
 
 def score_generation(
-    row: dict[str, Any], case: Case, *, executor: scorers.Executor | None = None
+    row: dict[str, Any],
+    case: Case,
+    *,
+    executor: scorers.Executor | None = None,
+    embedder: Embedder | None = None,
 ) -> dict[str, Any]:
     """生成 1 行を採点する。パースは 1 回だけ行い、採点も失敗判定もその結果を見る。"""
     parsed = parse(row.get("response") or "", case.failure)
@@ -108,7 +118,7 @@ def score_generation(
     eval_count = row.get("eval_count")
 
     report = failures.detect(parsed, case.failure, done_reason=done_reason, eval_count=eval_count)
-    result = scorers.score(parsed, case, executor=executor)
+    result = scorers.score(parsed, case, executor=executor, embedder=embedder)
     report = report.merge(tags=result.tags, applicable=result.applicable)
 
     na_tags, na_applicable = failures.detect_non_attempt(
@@ -138,12 +148,15 @@ def score_run(
     cases: list[Case],
     *,
     executor: scorers.Executor | None = None,
+    embedder: Embedder | None = None,
     fingerprint: str = "",
 ) -> ScoreSummary:
     by_id = {case.id: case for case in cases}
     summary = ScoreSummary()
     if executor is not None:
         executor = _CachedExecutor(executor, store, fingerprint)
+    if embedder is not None:
+        embedder = CachedEmbedder(embedder, store)
 
     existing, _ = store.scores()
     done = {
@@ -172,7 +185,7 @@ def score_run(
             summary.skipped += 1
             continue
         try:
-            store.append_score(score_generation(row, case, executor=executor))
+            store.append_score(score_generation(row, case, executor=executor, embedder=embedder))
         except scorers.ScorerNotImplemented as exc:
             kind = str(exc)
             summary.unsupported[kind] = summary.unsupported.get(kind, 0) + 1
@@ -184,4 +197,7 @@ def score_run(
     if isinstance(executor, _CachedExecutor):
         summary.exec_runs = executor.runs
         summary.exec_hits = executor.hits
+    if isinstance(embedder, CachedEmbedder):
+        summary.embed_runs = embedder.runs
+        summary.embed_hits = embedder.hits
     return summary

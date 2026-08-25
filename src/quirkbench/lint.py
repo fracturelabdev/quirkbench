@@ -33,6 +33,11 @@ MAX_ASSERT_SPREAD = 3.0
 MIN_TIMEOUT_SECONDS = 5
 MAX_TIMEOUT_SECONDS = 120
 
+#: ideate の要求件数の下限。1 案では diversity が原理的に 0 になり、
+#: 合成スコアが常に 0 になる（§13.1）。`cases.py` の
+#: ``max_tokens >= num_predict`` と同じ「原理的に発火しない検査」を弾く型の規約
+MIN_IDEATE_N = 2
+
 
 @dataclass(frozen=True)
 class LintIssue:
@@ -61,6 +66,63 @@ def _toplevel_defs(source: str, name: str) -> int:
     )
 
 
+def _lint_ideate(case: Case) -> list[LintIssue]:
+    """`ideate` ケースの規約（FLB-QB-001 §13.7）。
+
+    **`score.count` と `failure.count` の一致を機械で見るのがここの主目的。**
+    ずれると採点器と失敗検出器が違う件数を見る（§13.2）が、
+    どちらも例外を出さずに**それらしい数字を返す**ので、走らせても気づけない。
+    """
+    issues: list[LintIssue] = []
+    spec = case.score
+    score_count = spec.get("count")
+    failure_count = case.failure.get("count")
+
+    if failure_count is None:
+        issues.append(
+            LintIssue(case.id, "ideate_count_required", "failure.count が無いと案を切り出せない")
+        )
+    elif score_count != failure_count:
+        issues.append(
+            LintIssue(
+                case.id,
+                "ideate_count_agrees",
+                f"score.count={score_count} と failure.count={failure_count} が違う。"
+                "採点器と失敗検出器が別の件数を見る",
+            )
+        )
+
+    if not str(spec.get("topic", "")).strip():
+        issues.append(
+            LintIssue(case.id, "ideate_topic", "score.topic が空だと埋め込みゲートが成立しない")
+        )
+
+    groups = spec.get("coverage_terms")
+    if not isinstance(groups, list) or not groups:
+        issues.append(
+            LintIssue(case.id, "ideate_terms", "coverage_terms が空だと coverage が 0 固定")
+        )
+    elif any(not group for group in groups):
+        issues.append(
+            LintIssue(
+                case.id,
+                "ideate_terms",
+                "coverage_terms に空グループがある。常に未被覆になり coverage の上限が 1 を下回る",
+            )
+        )
+
+    n = (score_count or {}).get("n") if isinstance(score_count, dict) else None
+    if n is not None and int(n) < MIN_IDEATE_N:
+        issues.append(
+            LintIssue(
+                case.id,
+                "ideate_n_range",
+                f"count.n={n}。{MIN_IDEATE_N} 未満だと diversity が原理的に 0 になる",
+            )
+        )
+    return issues
+
+
 def lint(cases: list[Case]) -> list[LintIssue]:
     """静的な検査だけを行う。**実行を伴う検査は入れない** —
 
@@ -73,6 +135,9 @@ def lint(cases: list[Case]) -> list[LintIssue]:
 
     for case in cases:
         spec = case.score
+        if spec.get("kind") == "ideate":
+            issues.extend(_lint_ideate(case))
+            continue
         if spec.get("kind") != "pytest":
             continue
         entry = str(spec.get("entry_point", ""))

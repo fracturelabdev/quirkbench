@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import __version__
 from .cases import CaseError, load_cases
+from .embed import DEFAULT_EMBED_MODEL, OllamaEmbedder
 from .gate import (
     SandboxUnavailable,
     profile_sha256,
@@ -62,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     score_cmd.add_argument("--runs", type=Path, default=Path("runs"))
     score_cmd.add_argument("--dims", help="次元での絞り込み（カンマ区切り）")
     score_cmd.add_argument("--ids", help="ケース ID での絞り込み（カンマ区切り）")
+    score_cmd.add_argument("--host", default=DEFAULT_HOST, help="埋め込みに使う ollama")
+    score_cmd.add_argument(
+        "--embed-model",
+        default=DEFAULT_EMBED_MODEL,
+        help=f"代理指標に使う埋め込みモデル（既定: {DEFAULT_EMBED_MODEL}）",
+    )
     score_cmd.add_argument(
         "--unsafe-no-sandbox",
         action="store_true",
@@ -142,13 +149,28 @@ def _cmd_score(args: argparse.Namespace) -> int:
             sandbox_applied=executor.sandbox_applied,
         )
 
+    # 代理指標の採点には ollama が要る。**既定でローカル計算に落とさない**（§13.6）ので、
+    # ideate ケースがあるときだけ構築し、届かなければ OllamaError で採点ごと止まる。
+    embedder = None
+    if any(case.score.get("kind") == "ideate" for case in cases):
+        embedder = OllamaEmbedder(Ollama(args.host), args.embed_model)
+
     with store:
-        summary = score_run(store, cases, executor=executor, fingerprint=fingerprint)
+        summary = score_run(
+            store, cases, executor=executor, embedder=embedder, fingerprint=fingerprint
+        )
+        # meta は 1 回だけ読んで 1 回だけ書く。2 回に分けると、後の書き込みが
+        # 先の書き込みを読まないまま上書きする形になる
+        meta = store.read_meta()
         if executor is not None:
-            meta = store.read_meta()
             meta["canary_verdict"] = canary_verdict
             meta["sandbox_applied"] = executor.sandbox_applied
             meta["runner_fingerprint"] = fingerprint
+        if embedder is not None:
+            meta["embed_model"] = embedder.model
+            meta["embed_model_digest"] = embedder.model_digest
+            meta["embedder_fingerprint"] = embedder.fingerprint
+        if executor is not None or embedder is not None:
             store.write_meta(meta)
     print(
         f"生成 {summary.total} / 採点 {summary.scored} / "
@@ -158,6 +180,8 @@ def _cmd_score(args: argparse.Namespace) -> int:
         print(
             f"サンドボックス起動 {summary.exec_runs} 回 / キャッシュヒット {summary.exec_hits} 回"
         )
+    if embedder is not None:
+        print(f"埋め込み計算 {summary.embed_runs} 本 / キャッシュヒット {summary.embed_hits} 本")
     # 黙って落とした件数は必ず出す。0 件と「対象外だった」は違う
     for kind, count in sorted(summary.unsupported.items()):
         print(f"  未実装の score.kind {kind!r}: {count} 件を採点していない")

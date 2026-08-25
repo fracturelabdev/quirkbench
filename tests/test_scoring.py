@@ -32,7 +32,7 @@ CASE = parse_case(
     Path("c1.yaml"),
 )
 IDEATE_CASE = parse_case(
-    {"id": "i1", "dim": "ideate", "lang": "ja", "prompt": "p", "score": {"kind": "ideate"}},
+    {"id": "i1", "dim": "reason", "lang": "ja", "prompt": "p", "score": {"kind": "numeric"}},
     Path("i1.yaml"),
 )
 
@@ -137,7 +137,7 @@ def test_unsupported_kind_is_reported_not_dropped(store: RunStore) -> None:
     store.append_generation(gen("g1", "1. あ", case_id="i1"))
     summary = score_run(store, [CASE, IDEATE_CASE])
     assert summary.scored == 0
-    assert summary.unsupported == {"ideate": 1}
+    assert summary.unsupported == {"numeric": 1}
 
 
 def test_missing_case_is_reported(store: RunStore) -> None:

@@ -16,6 +16,7 @@ from typing import Any
 
 from .. import failures
 from ..cases import Case
+from ..embed import Embedder
 from ..parse import Parsed
 from . import Executor, ExecutorRequired, ScoreResult
 
@@ -33,7 +34,11 @@ def count_asserts(source: str) -> int:
     return sum(1 for node in ast.walk(tree) if isinstance(node, ast.Assert))
 
 
-def score_pytest(parsed: Parsed, case: Case, *, executor: Executor | None) -> ScoreResult:
+def score_pytest(
+    parsed: Parsed, case: Case, *, executor: Executor | None, embedder: Embedder | None
+) -> ScoreResult:
+    """``embedder`` は受け取るが使わない（registry の型を 1 つに保つため・§12.10）。"""
+    del embedder
     if executor is None:
         raise ExecutorRequired(f"{case.id}: 実行採点には executor が要る")
 

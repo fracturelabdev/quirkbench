@@ -190,3 +190,46 @@ def exec_key(*, payload_sha256: str, check_hash: str, fingerprint: str) -> str:
 def payload_sha256(payload: str) -> str:
     """抽出後のペイロードのハッシュ。"""
     return _sha256(payload)
+
+
+# ------------------------------------------------------- 埋め込みのキャッシュ（S4）
+
+
+def text_sha256(text: str) -> str:
+    """埋め込む本文のハッシュ。"""
+    return _sha256(text)
+
+
+def embedder_fingerprint(*, model: str, model_digest: str, ollama_version: str) -> str:
+    """埋め込み器の指紋（FLB-QB-001 §13.5）。
+
+    **実行器の指紋（``runner_fingerprint``）とは役割が違う。** あちらは
+    「同じ入力から違う判定が出る」のを封じるための装置だが、埋め込みは実測で
+    決定的だった（§13.4）ので、こちらが防ぐのは**値の混在**だけである。
+
+    - ``model_digest`` … ``ollama pull`` でモデルの中身が差し替わっても
+      **名前は変わらない**。digest が無いと、旧モデルのベクトルと新モデルの
+      ベクトルから**同じ run の中で cos を取る**ことになる
+    - ``ollama_version`` … §13.4 で「バージョンをまたいだ一致は測っていない」と
+      書いた。**測っていないものを一致するものとして扱わない**。更新でキャッシュは
+      全部無効になるが、無効化の代償は再計算だけで済む（実行キャッシュと違い、
+      隔離環境も参照解も要らない）
+
+    **``dims`` は入れない。** digest が同定するので冗長で、指紋に冗長な項目を
+    入れると「何が値を変えるのか」の記述としての価値が落ちる。
+
+    **``check_hash`` / ``scorer_version`` も入れない。** 埋め込みは採点手続きに
+    依存しない。``topic`` や閾値を直しても各案のベクトルは同じで、ここを入れると
+    閾値を 1 つ動かしただけで全ベクトルが無効になる（§10.2 と同じ論法）。
+    """
+    return _sha256("|".join([model, model_digest, ollama_version]))
+
+
+def embed_key(*, text_hash: str, fingerprint: str) -> str:
+    """埋め込みキャッシュのキー（FLB-QB-001 §13.5）。
+
+    **バッチ構成を入れない。** 実測でバッチの有無・並び順に依存せず完全一致した
+    （§13.4）ので、入れると同じ本文がバッチの組み方だけで別キーになり、
+    キャッシュがほぼ効かなくなる。
+    """
+    return _sha256("|".join([text_hash, fingerprint]))

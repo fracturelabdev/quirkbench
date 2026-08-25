@@ -28,6 +28,9 @@ EXEC_CACHE = "exec_cache.jsonl"
 #: ``--unsafe-no-sandbox`` の結果は**物理的に分ける**（FLB-QB-001 §12.9）。
 #: キーに ``sandbox_applied`` を入れるだけでなくファイルを分けて、混ざりようがなくする。
 EXEC_CACHE_UNSAFE = "exec_cache_unsafe.jsonl"
+#: 埋め込みのキャッシュ（FLB-QB-001 §13.5）。実行キャッシュと違い
+#: ``--unsafe-no-sandbox`` で分ける必要がない — 隔離の有無は埋め込みの値に関係しない。
+EMBEDDINGS = "embeddings.jsonl"
 META = "meta.json"
 LOCK = ".lock"
 
@@ -170,6 +173,26 @@ class RunStore:
         score は 2 回目の pass を書くので、**同じコードの別 gen_id が timeout を見る**。
         """
         self._append(EXEC_CACHE if sandbox_applied else EXEC_CACHE_UNSAFE, row)
+
+    def embeddings(self) -> dict[str, list[float]]:
+        """``embed_key`` → ベクトル。**先勝ち**（append-only なので最初の行）。
+
+        実行キャッシュと違い、先勝ちは「唯一の判定を確定させる」ためではない。
+        埋め込みは実測で決定的（§13.4）なので、**同じキーの行は同じ値**である。
+        先勝ちにしているのは、破損行や旧仕様の行が混ざったときに
+        **どちらを採ったかが読む順で決まらない**ようにするため。
+        """
+        rows, _report = read_jsonl(self.dir / EMBEDDINGS)
+        out: dict[str, list[float]] = {}
+        for row in rows:
+            key = str(row.get("embed_key", ""))
+            vector = row.get("vector")
+            if key and key not in out and isinstance(vector, list):
+                out[key] = [float(value) for value in vector]
+        return out
+
+    def append_embedding(self, row: dict[str, Any]) -> None:
+        self._append(EMBEDDINGS, row)
 
     def append_prompt(self, prompt_hash: str, text: str) -> None:
         """プロンプト本文を重複排除して保存する。

@@ -16,6 +16,7 @@ from typing import Any
 
 from .. import minischema
 from ..cases import Case
+from ..embed import Embedder
 from ..parse import Parsed, normalize
 from . import Executor, ScoreResult
 
@@ -32,15 +33,17 @@ def _equal(actual: Any, expected: Any) -> bool:
 
 
 def score_json_schema(
-    parsed: Parsed, case: Case, *, executor: Executor | None = None
+    parsed: Parsed, case: Case, *, executor: Executor | None, embedder: Embedder | None
 ) -> ScoreResult:
-    """``executor`` は受け取るが使わない。決定的採点はコードを実行しない。
+    """``executor`` も ``embedder`` も受け取るが使わない。決定的採点は外部に触れない。
 
     **署名に含めるのは、registry の型（``Scorer``）を全採点器で 1 つに保つため**（§12.10）。
     ここだけ署名が違うと registry の値型を緩めることになり、
-    「``executor`` を受け取らない関数は入らない」という保証が消える。
+    「依存を受け取らない関数は入らない」という保証が消える。
+
+    未使用の依存が 2 個になった。**3 個目が来たら `Deps` にまとめる**（§13.6）。
     """
-    del executor
+    del executor, embedder
     spec = case.score
     schema = spec.get("schema")
     expect: dict[str, Any] = spec.get("expect") or {}

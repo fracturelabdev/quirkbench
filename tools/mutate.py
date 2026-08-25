@@ -196,6 +196,85 @@ M = [
         "                report.missing_fields += 1\n",
         "                pass\n",
     ),
+    # ---- S4: ideate の代理指標（FLB-QB-001 §13）
+    (
+        "scorers/ideate.py",
+        "埋め込み器の必須化を外す（ローカル計算に落ちる経路が開く）",
+        '    if embedder is None:\n        raise EmbedderRequired(f"{case.id}: 代理指標の採点には embedder が要る")\n',
+        "",
+    ),
+    (
+        "scorers/ideate.py",
+        "脱線ゲートを無効化（閾値 0 で全件が通る）",
+        "OFFTOPIC_THRESHOLD = 0.35",
+        "OFFTOPIC_THRESHOLD = 0.0",
+    ),
+    (
+        "scorers/ideate.py",
+        "形態フィルタの「文字が無い」判定を外す（数字だけの案が valid になる）",
+        '    if stats.letters == 0:\n        return "no_letters"\n',
+        "",
+    ),
+    (
+        "scorers/ideate.py",
+        "形態フィルタの長さ下限を外す",
+        '    if len(text) < MIN_ITEM_CHARS:\n        return "too_short"\n',
+        "",
+    ),
+    (
+        "scorers/ideate.py",
+        "valid_rate の分母を産出件数にする（1 案返して満点が取れる）",
+        "    valid_rate = min(1.0, len(valid) / wanted) if wanted else 0.0",
+        "    valid_rate = len(valid) / len(items) if items else 0.0",
+    ),
+    (
+        "scorers/ideate.py",
+        "coverage の対象に除外された案を含める（屑で被覆を稼げる）",
+        '    coverage, missed = _coverage(valid, spec.get("coverage_terms"))',
+        '    coverage, missed = _coverage(items, spec.get("coverage_terms"))',
+    ),
+    (
+        "scorers/ideate.py",
+        "合成を乗算から平均にする（多様性だけ高い出力が上がる）",
+        "        score=valid_rate * coverage * diversity,",
+        "        score=(valid_rate + coverage + diversity) / 3,",
+    ),
+    (
+        "embed.py",
+        "多様性の 2 件未満の扱いを 1.0 にする",
+        "    if len(vectors) < 2:\n        return 0.0",
+        "    if len(vectors) < 2:\n        return 1.0",
+    ),
+    (
+        "embed.py",
+        "ペアごとのクリップを外す（逆向きのペアが平均を押し上げる）",
+        "            total += min(1.0, max(0.0, 1.0 - cosine(left, right)))",
+        "            total += 1.0 - cosine(left, right)",
+    ),
+    (
+        "embed.py",
+        "cos が単位正規化を前提にする（別の埋め込みモデルで黙って壊れる）",
+        "    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))\n    return dot / norm if norm else 0.0",
+        "    return dot",
+    ),
+    (
+        "embedcache.py",
+        "本数の食い違いを黙って許す（案とベクトルの対応が 1 つずれる）",
+        "            if len(vectors) != len(keys_missing):",
+        "            if False:",
+    ),
+    (
+        "keys.py",
+        "埋め込み指紋から model_digest を外す（差し替え後も旧ベクトルを再利用）",
+        '    return _sha256("|".join([model, model_digest, ollama_version]))',
+        '    return _sha256("|".join([model, ollama_version]))',
+    ),
+    (
+        "lint.py",
+        "score.count と failure.count の一致検査を外す",
+        "    elif score_count != failure_count:",
+        "    elif False:",
+    ),
 ]
 
 BOUNDARY = [
