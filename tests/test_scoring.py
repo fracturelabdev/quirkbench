@@ -189,3 +189,153 @@ def test_double_score_within_one_run_is_prevented(store: RunStore) -> None:
     summary = score_run(store, [CASE])
     assert summary.scored == 1
     assert len(store.scores()[0]) == 1
+
+
+# ------------------------------------- 実行結果のキャッシュ（FLB-QB-001 §12.9）
+
+
+class _CountingExecutor:
+    """呼び出し回数を数える stub。**コードを一切実行しない。**"""
+
+    sandbox_applied = True
+
+    def __init__(self, verdict: str = "pass") -> None:
+        self.verdict = verdict
+        self.calls = 0
+
+    def run(self, **kwargs: object) -> dict[str, object]:
+        self.calls += 1
+        return {"verdict": self.verdict}
+
+
+def _code_case(tmp_path):  # type: ignore[no-untyped-def]
+    from pathlib import Path
+
+    from quirkbench.cases import parse_case
+
+    raw = {
+        "id": "code-probe",
+        "dim": "code-gen",
+        "lang": "ja",
+        "prompt": "p",
+        "options": {"num_predict": 512},
+        "failure": {
+            "format": "python",
+            "extract": "fenced_or_whole",
+            "language": "none",
+            "min_tokens": 20,
+        },
+        "score": {
+            "kind": "pytest",
+            "entry_point": "double",
+            "timeout_seconds": 10,
+            "test": "def check(c):\n    assert c(2) == 4\n",
+            "reference": "def double(x):\n    return x * 2\n",
+        },
+    }
+    return parse_case(raw, Path("t.yaml"))
+
+
+def _gen_row(gen_id: str, response: str) -> dict[str, object]:
+    return {
+        "gen_id": gen_id,
+        "case_id": "code-probe",
+        "model": "m",
+        "model_digest": "d",
+        "prompt_hash": "p",
+        "seed": 1,
+        "options_hash": "o",
+        "attempt": 0,
+        "response": response,
+        "done_reason": "stop",
+        "eval_count": 40,
+    }
+
+
+def test_identical_code_across_gen_ids_executes_once(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """**同一コードが別 gen_id に現れるのは常態**（実データで 8 組中 3 組）。
+
+    第 1 段は gen_id 単位、第 2 段はコード内容単位なので、ここでキャッシュが効く。
+    """
+    from quirkbench.scoring import score_run
+    from quirkbench.store import RunStore
+
+    case = _code_case(tmp_path)
+    code = "def double(x):\n    return x * 2\n"
+    with RunStore(tmp_path, "r") as store:
+        for i in range(3):
+            store.append_generation(_gen_row(f"g{i}", code))
+        executor = _CountingExecutor()
+        summary = score_run(store, [case], executor=executor, fingerprint="fp")
+    assert summary.scored == 3
+    assert executor.calls == 1, "同じコードを 3 回実行している"
+    assert summary.exec_hits == 2
+
+
+def test_second_score_run_executes_nothing(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """**S3 の完了条件。** 2 回目でサンドボックスが 1 度も起動しない。"""
+    from quirkbench.scoring import score_run
+    from quirkbench.store import RunStore
+
+    case = _code_case(tmp_path)
+    with RunStore(tmp_path, "r") as store:
+        store.append_generation(_gen_row("g0", "def double(x):\n    return x * 2\n"))
+        first = _CountingExecutor()
+        score_run(store, [case], executor=first, fingerprint="fp")
+        second = _CountingExecutor()
+        summary = score_run(store, [case], executor=second, fingerprint="fp")
+    assert first.calls == 1
+    assert second.calls == 0
+    assert summary.scored == 0
+
+
+def test_fingerprint_change_invalidates_the_cache(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """境界が変わったら作り直す。**隔離あり時代と隔離なし時代の判定を混ぜない。**"""
+    from quirkbench.scoring import _CachedExecutor
+    from quirkbench.store import RunStore
+
+    with RunStore(tmp_path, "r") as store:
+        inner = _CountingExecutor()
+        a = _CachedExecutor(inner, store, "fp-a")
+        a.run(payload="x", check_source="c", entry_point="e", timeout_seconds=1, check_hash="h")
+        b = _CachedExecutor(inner, store, "fp-b")
+        b.run(payload="x", check_source="c", entry_point="e", timeout_seconds=1, check_hash="h")
+    assert inner.calls == 2
+
+
+def test_check_hash_change_invalidates_the_cache(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """テストを直せば再実行が走る。``scorer_version`` を直しただけでは走らない。"""
+    from quirkbench.scoring import _CachedExecutor
+    from quirkbench.store import RunStore
+
+    with RunStore(tmp_path, "r") as store:
+        inner = _CountingExecutor()
+        cached = _CachedExecutor(inner, store, "fp")
+        cached.run(
+            payload="x", check_source="c", entry_point="e", timeout_seconds=1, check_hash="h1"
+        )
+        cached.run(
+            payload="x", check_source="c", entry_point="e", timeout_seconds=1, check_hash="h2"
+        )
+    assert inner.calls == 2
+
+
+def test_error_score_rows_are_not_marked_done(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """``error`` を ``done`` に入れると、一時的な基盤失敗が永久スキップになる（§12.9）。"""
+    from quirkbench.scoring import score_run
+    from quirkbench.store import RunStore
+
+    case = _code_case(tmp_path)
+    with RunStore(tmp_path, "r") as store:
+        store.append_generation(_gen_row("g0", "def double(x):\n    return x * 2\n"))
+        store.append_score(
+            {
+                "gen_id": "g0",
+                "scorer_version": 2,
+                "check_hash": case.check_hash,
+                "error": "workdir が作れない",
+            }
+        )
+        executor = _CountingExecutor()
+        summary = score_run(store, [case], executor=executor, fingerprint="fp")
+    assert summary.scored == 1, "error 行が完了として扱われている"

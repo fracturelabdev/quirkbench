@@ -193,3 +193,58 @@ def test_score_command_missing_run(tmp_path, capsys):
     )
     assert rc == 2
     assert "存在しない" in capsys.readouterr().err
+
+
+# ------------------------------------------------- lint-cases / score のゲート
+
+
+def test_lint_cases_passes_on_bundled_cases(capsys) -> None:  # type: ignore[no-untyped-def]
+    from quirkbench.cli import main
+
+    assert main(["lint-cases", "--cases", "cases"]) == 0
+    assert "指摘 0 件" in capsys.readouterr().out
+
+
+def test_lint_cases_fails_on_broken_case(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """**ゲートは落ちなければゲートではない。**"""
+    from quirkbench.cli import main
+
+    root = tmp_path / "cases" / "code-gen"
+    root.mkdir(parents=True)
+    (root / "bad.yaml").write_text(
+        "id: bad\ndim: code-gen\nlang: ja\nprompt: p\n"
+        "options: {num_predict: 512}\n"
+        "failure: {format: python, extract: fenced_or_whole, language: none, min_tokens: 20}\n"
+        "score:\n  kind: pytest\n  entry_point: f\n  timeout_seconds: 2\n"
+        "  test: |\n    def check(c):\n        assert c(1) == 1\n"
+        "  reference: |\n    def f(x):\n        return x\n",
+        encoding="utf-8",
+    )
+    assert main(["lint-cases", "--cases", str(tmp_path / "cases")]) == 1
+    assert "timeout_range" in capsys.readouterr().err
+
+
+def test_score_refuses_code_gen_on_non_darwin(tmp_path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    """境界の無い環境で `code-gen` を採点しない。**黙って素で走らせない。**"""
+    from quirkbench import gate
+    from quirkbench.cli import main
+    from quirkbench.store import RunStore
+
+    monkeypatch.setattr(gate.sys, "platform", "linux")
+    with RunStore(tmp_path / "runs", "r") as store:
+        store.append_generation({"gen_id": "g", "case_id": "code-gen-two-sum-ja", "response": "x"})
+    code = main(
+        [
+            "score",
+            "--run",
+            "r",
+            "--runs",
+            str(tmp_path / "runs"),
+            "--cases",
+            "cases",
+            "--dims",
+            "code-gen",
+        ]
+    )
+    assert code == 2
+    assert "macOS 専用" in capsys.readouterr().err

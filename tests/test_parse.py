@@ -224,3 +224,59 @@ def test_content_chars_excludes_fence_markers() -> None:
     parsed = P.parse("```\nabcde\n```", NONE_SPEC)
     assert parsed.content_chars == 5
     assert len(parsed.raw) > parsed.content_chars
+
+
+# ------------------------------------------------- fenced_or_whole（§12.4）
+
+CODE_SPEC = {
+    "format": "python",
+    "extract": "fenced_or_whole",
+    "language": "none",
+    "requires_def": "solve",
+}
+
+
+def test_explanatory_fence_before_the_answer_is_skipped() -> None:
+    """説明用の断片を先に書くモデルを落とさない。落とすと測っているのが出力順序になる。"""
+    raw = (
+        "考え方です。\n```text\nこうします\n```\n"
+        "実装:\n```python\ndef solve(x):\n    return x * 2\n```"
+    )
+    assert "x * 2" in P.parse(raw, CODE_SPEC).payload
+
+
+def test_last_valid_candidate_wins() -> None:
+    """誤答を示してから直す型では、**両方の候補が entry_point を定義する**。
+
+    Python 自身が後の定義で前を上書きするので、最後を採るのが実行時の挙動と一致する。
+    """
+    raw = (
+        "```python\ndef solve(x):\n    return x + 2\n```\n"
+        "正しくは:\n```python\ndef solve(x):\n    return x * 2\n```"
+    )
+    assert "x * 2" in P.parse(raw, CODE_SPEC).payload
+    assert "x + 2" not in P.parse(raw, CODE_SPEC).payload
+
+
+def test_whole_text_is_the_last_resort_not_the_default() -> None:
+    """全文を先に置くと「最後を採る」がいつも全文を選び、フェンスを見る意味が消える。"""
+    raw = "```python\ndef solve(x):\n    return x * 2\n```"
+    assert P.parse(raw, CODE_SPEC).payload.strip().startswith("def solve")
+
+
+def test_falls_back_to_whole_text_without_fences() -> None:
+    assert "x * 2" in P.parse("def solve(x):\n    return x * 2\n", CODE_SPEC).payload
+
+
+def test_candidate_must_define_the_entry_point_at_top_level() -> None:
+    """top-level に無いものは候補にしない。ネストした定義は import から見えない。"""
+
+    assert P.has_toplevel_def("def solve(x):\n    return x\n", "solve")
+    assert not P.has_toplevel_def("def outer():\n    def solve(x):\n        return x\n", "solve")
+    assert not P.has_toplevel_def("def other(x):\n    return x\n", "solve")
+    assert not P.has_toplevel_def("def solve(x)\n    broken\n", "solve")
+
+
+def test_syntax_error_keeps_format_broken_reachable() -> None:
+    parsed = P.parse("```python\ndef solve(x)\n    return x\n```", CODE_SPEC)
+    assert parsed.syntax_error is not None

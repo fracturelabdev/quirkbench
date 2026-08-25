@@ -5,12 +5,20 @@
 #
 # ollama は CI に無いので、ここで回るのは生成を伴わない検査だけ。
 # 実モデルでの計測は手元で行う（README の「開発」参照）。
+#
+# **path フィルタは否定形で書く。** 肯定形で「境界に関係するファイル」を列挙すると、
+# 境界の定義を CI 設定と実装の 2 箇所に持つことになり、新しいファイルを足したときに
+# フィルタから漏れて **ubuntu だけが緑で通る**。否定形なら列挙の腐敗が原理的に消える。
+# `.github/**` を除外リストに入れないのは、**ワークフロー自身の変更こそ
+# 境界の検査を無効化しうる変更**（フィルタを緩める・ジョブを消す）だから。
 name: checks
 
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', 'README.md', 'CONTRIBUTING.md', 'LICENSE']
   pull_request:
+    paths-ignore: ['docs/**', 'README.md', 'CONTRIBUTING.md', 'LICENSE']
   workflow_dispatch:
 
 jobs:
@@ -36,13 +44,65 @@ jobs:
       - name: 型
         run: uv run mypy
 
+      # 境界テストは macOS ジョブで回る。ここで回すと全部 skip され、
+      # 「緑だが一度も走っていない」状態になる。
+      #
+      # **カバレッジの対象から sandbox/ を外す。** ここで測ると、境界テストを
+      # 外したぶんだけ数字が下がり、**下限を下げる圧力**になる。境界のカバレッジは
+      # macOS ジョブが同じ 90% で測るので、どちらの穴も塞がったままになる。
       - name: テストとカバレッジ
-        run: uv run pytest -q --cov=src/quirkbench --cov-report=term --cov-fail-under=90
+        run: >
+          uv run pytest -q --deselect tests/test_sandbox.py
+          --cov=src/quirkbench --cov-report=term --cov-fail-under=90
+          --cov-config=.coveragerc-checks
 
       # カバレッジは「その行を通ったか」しか見ない。ガードが実際に呼ばれて
       # いるかは別に測る。全部落ちるのが正常で、生き残りが出たら失敗させる。
       - name: ミューテーション
         run: uv run python tools/mutate.py
 
-      - name: 同梱ケースが検証を通ること
-        run: uv run python -c "from pathlib import Path; from quirkbench.cases import load_cases; print(len(load_cases(Path('cases'))), 'ケース OK')"
+      # ケースの粒度規約を機械で強制する。規約は書いた時点では効かない。
+      - name: ケースのゲート
+        run: uv run qb lint-cases
+
+      # src が tests を import していないこと。stub 実行器が本番の import 経路から
+      # 到達できると、**サンドボックスを通さない実行**が 1 行で作れてしまう。
+      - name: stub がテスト側に閉じていること
+        run: |
+          if grep -rn "^\s*\(from\|import\)\s\+tests" src/quirkbench/; then
+            echo "src が tests を import している" >&2
+            exit 1
+          fi
+          echo "OK"
+
+  sandbox:
+    # **この体系で唯一の実質的なセキュリティ境界**を実機で測る。
+    # macOS は Linux の約 10 倍のコスト（$0.062/分 対 $0.006/分）なので、
+    # 回る条件は上の paths-ignore で絞っている。超えたらフィルタを緩めるのではなく
+    # このジョブの中身を削る — 緩めると、削ったことが緑の中に隠れる。
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: uv を入れる
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: 依存を同期する
+        run: uv sync --all-extras --dev
+
+      # カナリアが「対象が存在しないだけ」で合格しないことを、
+      # 境界を外した対照実験まで含めて確かめる。
+      # sandbox/ と gate.py のカバレッジも 90% を要求する。ubuntu 側で外した分を
+      # ここで取り返さないと、**境界だけ検査が緩い**状態になる。
+      - name: 境界テストとカバレッジ
+        run: >
+          uv run pytest -q tests/test_sandbox.py
+          --cov=src/quirkbench/sandbox --cov=src/quirkbench/gate
+          --cov-report=term --cov-fail-under=90
+
+      # 境界のガードは tools/mutate.py の通常セットでは届かない。
+      # canary_passed を True に固定する変異などをここで殺す。
+      - name: 境界のミューテーション
+        run: uv run python tools/mutate.py --boundary

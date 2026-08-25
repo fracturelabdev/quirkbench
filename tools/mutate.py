@@ -22,6 +22,16 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "src" / "quirkbench"
 
+#: 境界の変異は**別扱いにする**（FLB-QB-001 §12.10）。
+#:
+#: 理由は 2 つ。**① 走らせる場所が違う** — 境界テストは macOS でしか回らないので、
+#: ubuntu の `checks` で回すと全部「落ちた」ことになり、変異が効いているのか
+#: skip されただけなのか区別がつかない。**② 時間が桁違い** — 境界テストは
+#: 実際に sandbox-exec を 20 回以上起動するので 1 変異あたり 30 秒を超える。
+#: 通常の変異まで巻き込むと、検査そのものが回されなくなる。
+FAST_ARGS = ["--deselect", "tests/test_sandbox.py"]
+BOUNDARY_ARGS = ["tests/test_sandbox.py"]
+
 M = [
     (
         "parse.py",
@@ -43,9 +53,9 @@ M = [
     ),
     (
         "parse.py",
-        "抽出候補を第一フェンス固定に戻す",
-        "        if json_error is None and syntax_error is None:\n            return candidate",
-        "        if True:\n            return candidate",
+        "抽出候補の形式検証を無効化（第一候補を無条件に採る）",
+        "        ok = json_error is None and syntax_error is None",
+        "        ok = True",
     ),
     (
         "parse.py",
@@ -188,8 +198,52 @@ M = [
     ),
 ]
 
+BOUNDARY = [
+    (
+        "gate.py",
+        "カナリアの総合判定を常に合格にする",
+        "    return GateReport(all(row[1] for row in rows), tuple(rows))",
+        "    return GateReport(True, tuple(rows))",
+    ),
+    (
+        "gate.py",
+        "実行器をサンドボックス無しに差し替える",
+        "    executor = SandboxExecutor(use_sandbox=True)",
+        "    executor = SandboxExecutor(use_sandbox=False)",
+    ),
+    (
+        "sandbox/canary.py",
+        "空振り（ENOENT 等）も合格にする",
+        "    if num in _BOUNDARY_ERRNOS:",
+        "    if True:",
+    ),
+    (
+        "sandbox/executor.py",
+        "打ち切りの判定をマーカー判定より後ろに回す",
+        "    if returncode in _KILL_RETURNCODES:",
+        "    if False:",
+    ),
+]
+
+boundary_mode = "--boundary" in sys.argv
+targets = BOUNDARY if boundary_mode else M
+pytest_args = BOUNDARY_ARGS if boundary_mode else FAST_ARGS
+print(f"対象: {'境界' if boundary_mode else '通常'}（{len(targets)} 変異）\n")
+
+# **kill されると finally は走らない。** 実際に背景実行を止めたときソースが
+# 変異したまま残り、それを観測した。その瞬間に commit していれば、
+# 安全策を無効化した状態が履歴に入っていた。番兵で次回に検出する。
+SENTINEL = pathlib.Path(__file__).resolve().parent / ".mutate-in-progress"
+if SENTINEL.exists():
+    print(
+        f"前回の実行が途中で止まっている: {SENTINEL.read_text().strip()}\n"
+        f"そのファイルを git で戻してから {SENTINEL} を消すこと",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
 killed = survived = missing = 0
-for name, label, old, new in M:
+for name, label, old, new in targets:
     path = ROOT / name
     backup = path.read_bytes()
     text = backup.decode()
@@ -200,13 +254,27 @@ for name, label, old, new in M:
     # **復元は finally に置く。** 例外や Ctrl-C で抜けると、変異したままの
     # ソースが手元に残る。検証のための道具が壊し得るのは本末転倒なので構造で塞ぐ。
     try:
+        SENTINEL.write_text(f"{path}（{label}）\n")
         path.write_bytes(text.replace(old, new, 1).encode())
         rc = subprocess.run(
-            ["uv", "run", "pytest", "-q", "-x", "--no-header"], capture_output=True, text=True
+            [
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "-x",
+                "--no-header",
+                "-p",
+                "no:cacheprovider",
+                *pytest_args,
+            ],
+            capture_output=True,
+            text=True,
         ).returncode
     finally:
         path.write_bytes(backup)
         assert path.read_bytes() == backup, f"{path} の復元に失敗した"
+        SENTINEL.unlink(missing_ok=True)
     if rc != 0:
         print(f"  ○ {label:48} 落ちた")
         killed += 1

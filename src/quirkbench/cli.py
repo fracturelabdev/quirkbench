@@ -8,8 +8,17 @@ from pathlib import Path
 
 from . import __version__
 from .cases import CaseError, load_cases
+from .gate import (
+    SandboxUnavailable,
+    profile_sha256,
+    select_executor,
+    verify_positive_controls,
+)
+from .keys import runner_fingerprint
+from .lint import lint
 from .ollama import DEFAULT_HOST, Ollama, OllamaError
 from .runner import DigestDrift, run
+from .sandbox import package_sha256
 from .scoring import score_run
 from .store import RunLocked, RunStore
 
@@ -53,6 +62,17 @@ def build_parser() -> argparse.ArgumentParser:
     score_cmd.add_argument("--runs", type=Path, default=Path("runs"))
     score_cmd.add_argument("--dims", help="次元での絞り込み（カンマ区切り）")
     score_cmd.add_argument("--ids", help="ケース ID での絞り込み（カンマ区切り）")
+    score_cmd.add_argument(
+        "--unsafe-no-sandbox",
+        action="store_true",
+        help="隔離なしで生成コードを実行する（darwin 限定・結果は別ファイルに書く）",
+    )
+
+    lint_cmd = sub.add_parser(
+        "lint-cases",
+        help="ケース定義のゲート。1 件でも落ちたら停止する",
+    )
+    lint_cmd.add_argument("--cases", type=Path, default=Path("cases"))
 
     status = sub.add_parser("status", help="run の進捗を表示する")
     status.add_argument("--run", default="main")
@@ -88,18 +108,71 @@ def _cmd_score(args: argparse.Namespace) -> int:
     if not store.dir.exists():
         print(f"run {args.run!r} は存在しない", file=sys.stderr)
         return 2
+    # **ケースのゲートを先に通す。** 粒度が崩れたケースで採点すると、
+    # 数字が出たあとで気づくことになる（§12.2）。
+    issues = lint(cases)
+    if issues:
+        print("ケース定義が規約を満たしていない:", file=sys.stderr)
+        for issue in issues:
+            print(f"  {issue.case_id}: [{issue.check}] {issue.message}", file=sys.stderr)
+        return 2
+
+    executor = None
+    fingerprint = ""
+    canary_verdict = "not_run"
+    if any(case.score.get("kind") == "pytest" for case in cases):
+        # **ゲートは実行器を選ぶ層に置く**（§12.10）。採点器側に置くとテスト用の
+        # 迂回が要り、その迂回が禁じたスイッチそのものになる。
+        try:
+            executor = select_executor(unsafe_no_sandbox=args.unsafe_no_sandbox)
+        except SandboxUnavailable as exc:
+            print(f"実行採点を拒否した: {exc}", file=sys.stderr)
+            return 2
+        canary_verdict = "skipped(unsafe)" if args.unsafe_no_sandbox else "pass"
+        # 陽性対照。**キャッシュを通さない生の実行器で回す**（§12.8）。
+        broken = verify_positive_controls(executor, cases)
+        if broken:
+            print("陽性対照が落ちた。採点を拒否する:", file=sys.stderr)
+            for case_id, detail in broken:
+                print(f"  {case_id}: {detail}", file=sys.stderr)
+            return 2
+        fingerprint = runner_fingerprint(
+            sandbox_pkg_sha256=package_sha256(),
+            profile_sb_sha256=profile_sha256(),
+            sandbox_applied=executor.sandbox_applied,
+        )
+
     with store:
-        summary = score_run(store, cases)
+        summary = score_run(store, cases, executor=executor, fingerprint=fingerprint)
+        if executor is not None:
+            meta = store.read_meta()
+            meta["canary_verdict"] = canary_verdict
+            meta["sandbox_applied"] = executor.sandbox_applied
+            meta["runner_fingerprint"] = fingerprint
+            store.write_meta(meta)
     print(
         f"生成 {summary.total} / 採点 {summary.scored} / "
         f"採点済みスキップ {summary.skipped} / 生成失敗 {summary.generation_errors}"
     )
+    if executor is not None:
+        print(
+            f"サンドボックス起動 {summary.exec_runs} 回 / キャッシュヒット {summary.exec_hits} 回"
+        )
     # 黙って落とした件数は必ず出す。0 件と「対象外だった」は違う
     for kind, count in sorted(summary.unsupported.items()):
         print(f"  未実装の score.kind {kind!r}: {count} 件を採点していない")
     for case_id, count in sorted(summary.missing_cases.items()):
         print(f"  ケース定義が見つからない {case_id!r}: {count} 件を採点していない")
     return 0
+
+
+def _cmd_lint(args: argparse.Namespace) -> int:
+    cases = load_cases(args.cases)
+    issues = lint(cases)
+    for issue in issues:
+        print(f"{issue.case_id}: [{issue.check}] {issue.message}", file=sys.stderr)
+    print(f"ケース {len(cases)} 件 / 指摘 {len(issues)} 件")
+    return 1 if issues else 0
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
@@ -134,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_score(args)
         if args.command == "status":
             return _cmd_status(args)
+        if args.command == "lint-cases":
+            return _cmd_lint(args)
     except (CaseError, OllamaError, RunLocked, DigestDrift) as exc:
         print(f"エラー: {exc}", file=sys.stderr)
         return 2

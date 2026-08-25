@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import platform
+import sys
 from collections.abc import Mapping
 from typing import Any, TypedDict
 
@@ -127,3 +130,63 @@ def gen_id(*, run_id: str, parts: KeyParts) -> str:
     """
     key = completion_key(parts)
     return _sha256("|".join([run_id, *(str(part) for part in key)]))
+
+
+# ------------------------------------------------------- 実行結果のキャッシュ（S3）
+
+
+def runner_fingerprint(
+    *, sandbox_pkg_sha256: str, profile_sb_sha256: str, sandbox_applied: bool
+) -> str:
+    """実行環境の指紋（FLB-QB-001 §12.9）。
+
+    **判定を変える入力だけを入れる。**
+
+    - ``python_identity``: ``realpath(sys.executable)`` と ``sys.version`` の完全文字列。
+      バージョン番号だけでは、uv 管理と system、arm64 と Rosetta が同じ ``3.12.x`` を
+      名乗る。プロファイルは Python prefix を allow するので**どの prefix かは判定を変える**
+    - ``os_build``: 将来の macOS が SBPL を黙って無視しても指紋が変わらないと、
+      **隔離あり時代と隔離なし時代の判定が同一キーで混ざる**
+    - ``sandbox_pkg_sha256``: ``sandbox/`` 配下全体。手で上げる版番号にしない —
+      ``profile.sb`` を入れて ``_child.py`` を忘れたのと同じ形になる。
+      **カナリア実装の変更もここで拾う**
+    - ``sandbox_applied``: ``--unsafe-no-sandbox`` の判定を正常な run が再利用しない
+
+    **``canary_verdict`` は入れない。** 値が動くと payload 横断で全 ``exec_key`` が
+    変わる（部分無効化が無い）うえ、ゲートが「1 本でも落ちたら実行拒否」なので
+    **キャッシュに書ける行の verdict は常に pass** になり、区別する情報を持たない。
+    verdict は ``meta.json`` と score 行に記録する（§12.8）。
+
+    **``reference_seconds`` も入れない。** §12.5 でタイムアウトを絶対値にしたので、
+    測定値が判定に入らなくなった。
+    """
+    python_identity = f"{os.path.realpath(sys.executable)}|{sys.version}"
+    os_build = f"{platform.system()}|{platform.release()}|{platform.machine()}"
+    return _sha256(
+        "|".join(
+            [
+                python_identity,
+                os_build,
+                sandbox_pkg_sha256,
+                profile_sb_sha256,
+                "1" if sandbox_applied else "0",
+            ]
+        )
+    )
+
+
+def exec_key(*, payload_sha256: str, check_hash: str, fingerprint: str) -> str:
+    """実行結果キャッシュのキー（FLB-QB-001 §12.9）。
+
+    ``payload_sha256`` は**抽出後のペイロード**（``Parsed.payload``）。生テキストにしない —
+    抽出実装だけ直したときに、生テキストのハッシュだと古い実行結果が返る。
+
+    ``scorer_version`` を**入れない**。scorer を直すたびに subprocess を回し直さない
+    ためで、これがこのキャッシュの目的そのもの（§10.2）。
+    """
+    return _sha256("|".join([payload_sha256, check_hash, fingerprint]))
+
+
+def payload_sha256(payload: str) -> str:
+    """抽出後のペイロードのハッシュ。"""
+    return _sha256(payload)

@@ -33,6 +33,9 @@ WRONG_LANGUAGE = "wrong_language"
 ZH_LEAK = "zh_leak"
 REPEATED = "repeated"
 NON_ATTEMPT = "non_attempt"
+#: 実行採点でのみ出る（§12.6）。どちらも**母数内**で、基盤失敗とは別物。
+EXEC_ERROR = "exec_error"
+EXEC_TIMEOUT = "exec_timeout"
 
 # 原因の優先順位。タグはこの順で並べる（FLB-QB-001 §6-A）
 PRIORITY: tuple[str, ...] = (
@@ -46,6 +49,10 @@ PRIORITY: tuple[str, ...] = (
     WRONG_LANGUAGE,
     ZH_LEAK,
     REPEATED,
+    # 実行の失敗は、形式の失敗より後に置く。format_broken なコードは
+    # そもそも実行に届かないので、両方付くときは形式が原因。
+    EXEC_TIMEOUT,
+    EXEC_ERROR,
     NON_ATTEMPT,
 )
 
@@ -58,6 +65,9 @@ TIER: dict[str, str] = {
     PREAMBLE: "declared",
     COUNT_MISMATCH: "declared",
     OVERLONG: "declared",
+    # 実行の事実そのもの。returncode と継承 fd の内容だけで決まる（§12.5・§12.6）
+    EXEC_TIMEOUT: "hard",
+    EXEC_ERROR: "hard",
     WRONG_LANGUAGE: "candidate",
     ZH_LEAK: "candidate",
     REPEATED: "candidate",

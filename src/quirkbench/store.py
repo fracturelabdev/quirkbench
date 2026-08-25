@@ -24,6 +24,10 @@ from . import keys as _keys
 GENERATIONS = "generations.jsonl"
 PROMPTS = "prompts.jsonl"
 SCORES = "scores.jsonl"
+EXEC_CACHE = "exec_cache.jsonl"
+#: ``--unsafe-no-sandbox`` の結果は**物理的に分ける**（FLB-QB-001 §12.9）。
+#: キーに ``sandbox_applied`` を入れるだけでなくファイルを分けて、混ざりようがなくする。
+EXEC_CACHE_UNSAFE = "exec_cache_unsafe.jsonl"
 META = "meta.json"
 LOCK = ".lock"
 
@@ -142,6 +146,30 @@ class RunStore:
 
     def append_score(self, row: dict[str, Any]) -> None:
         self._append(SCORES, row)
+
+    def exec_cache(self, *, sandbox_applied: bool = True) -> dict[str, dict[str, Any]]:
+        """``exec_key`` → 実行結果。**先勝ち**（append-only なので最初の行）。
+
+        先勝ちが安全なのは「同一 ``exec_key`` に後から違う判定が来ない」が成り立つとき
+        だけで、それを成り立たせるのが §12.9 の確認プロトコル
+        （**確認が終わるまでキャッシュに書かない**）。
+        """
+        name = EXEC_CACHE if sandbox_applied else EXEC_CACHE_UNSAFE
+        rows, _report = read_jsonl(self.dir / name)
+        out: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            key = str(row.get("exec_key", ""))
+            if key and key not in out:
+                out[key] = row
+        return out
+
+    def append_exec_cache(self, row: dict[str, Any], *, sandbox_applied: bool = True) -> None:
+        """**確認プロトコルが終わったあとの 1 回だけ**呼ぶ（§12.9）。
+
+        1 回目の ``exec_timeout`` を書いてはいけない。書くと先勝ちが timeout を掴み、
+        score は 2 回目の pass を書くので、**同じコードの別 gen_id が timeout を見る**。
+        """
+        self._append(EXEC_CACHE if sandbox_applied else EXEC_CACHE_UNSAFE, row)
 
     def append_prompt(self, prompt_hash: str, text: str) -> None:
         """プロンプト本文を重複排除して保存する。

@@ -1,0 +1,6 @@
+# ubuntu の `checks` ジョブ用。境界（sandbox/）は macOS ジョブが同じ下限で測る。
+# ここに入れたままにすると、境界テストを外したぶん数字が下がり、下限を下げる圧力になる。
+[run]
+source = src/quirkbench
+omit =
+    src/quirkbench/sandbox/*

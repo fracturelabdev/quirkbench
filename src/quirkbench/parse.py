@@ -21,7 +21,7 @@ from typing import Any
 from .textstats import Repeat, char_class_of, detect_language, extract_items, max_repeat
 
 FORMATS = frozenset({"json", "python", "none"})
-EXTRACTORS = frozenset({"fenced_or_first_object", "fenced", "whole"})
+EXTRACTORS = frozenset({"fenced_or_first_object", "fenced_or_whole", "fenced", "whole"})
 
 _DEFAULT_EXTRACTOR = {
     "json": "fenced_or_first_object",
@@ -191,6 +191,18 @@ def _regions(
         block = blocks[0]
         return [(block.body, _body_offset(raw, block), block)]
 
+    if extractor == "fenced_or_whole":
+        # python 用。lang が python/py/空のフェンス → その他 → 全文。
+        # **全文は必ず最後**。先に置くと「最後の有効候補を採る」規則が
+        # 全文だけを選ぶようになり、フェンスを見る意味が消える（§12.4）。
+        py_first = [b for b in blocks if (b.lang or "").lower() in {"", "py", "python"}]
+        others = [b for b in blocks if b not in py_first]
+        out: list[tuple[str, int, CodeBlock | None]] = [
+            (b.body, _body_offset(raw, b), b) for b in py_first + others
+        ]
+        out.append((raw, 0, None))
+        return out
+
     preferred = [b for b in blocks if (b.lang or "").lower() in {"", "json"}]
     rest = [b for b in blocks if b not in preferred]
     regions: list[tuple[str, int, CodeBlock | None]] = [
@@ -233,15 +245,40 @@ def visible_chars(text: str) -> int:
     return sum(1 for ch in strip_fence_lines(text) if not ch.isspace() and ch not in _INVISIBLE)
 
 
+def has_toplevel_def(payload: str, entry_point: str) -> bool:
+    """``payload`` の AST の top-level に ``entry_point`` と同名の関数定義があるか。"""
+    try:
+        tree = ast.parse(payload)
+    except (SyntaxError, ValueError):
+        return False
+    return any(
+        isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == entry_point
+        for node in tree.body
+    )
+
+
 def _extract(
-    raw: str, fmt: str, extractor: str, blocks: tuple[CodeBlock, ...]
+    raw: str,
+    fmt: str,
+    extractor: str,
+    blocks: tuple[CodeBlock, ...],
+    entry_point: str | None = None,
 ) -> tuple[str, int, int, CodeBlock | None, Any | None, str | None, str | None, list[str]]:
-    """候補を順に試し、最初に形式検証を通ったものを採る。
+    """候補を順に試し、形式検証を通ったものを採る。
 
     どれも通らなければ**第一候補**の結果を採る（誤りの説明として最も妥当なため）。
     「何かがパースできるまで試す」わけではないので、`format_broken` は到達可能なまま。
+
+    ``fenced_or_whole`` では**最後の**有効候補を採る（§12.4）。誤りを示してから直す
+    説明の型では、**両方の候補が `entry_point` を top-level に定義する**。
+    Python 自身が後の定義で前を上書きするので、最後を採るのが実行時の挙動と一致する。
+    さらに ``entry_point`` を渡された場合は、**top-level に同名の定義があること**も
+    条件にする。これが無いと、説明用の断片を先に書くモデルを落とし、
+    測っているのがコード能力ではなく出力順序になる。
     """
+    take_last = extractor == "fenced_or_whole"
     first = None
+    best = None
     for region, offset, block in _regions(raw, extractor, blocks):
         start, end = 0, len(region)
         structure_unclosed: list[str] = []
@@ -263,10 +300,17 @@ def _extract(
             syntax_error,
             structure_unclosed + fmt_unclosed,
         )
-        if json_error is None and syntax_error is None:
-            return candidate
+        ok = json_error is None and syntax_error is None
+        if ok and entry_point is not None and not has_toplevel_def(payload, entry_point):
+            ok = False
+        if ok:
+            if not take_last:
+                return candidate
+            best = candidate
         if first is None:
             first = candidate
+    if best is not None:
+        return best
     assert first is not None
     return first
 
@@ -282,8 +326,9 @@ def parse(raw: str, spec: dict[str, Any] | None = None) -> Parsed:
         raise ValueError(f"未知の failure.extract: {extractor!r}")
 
     blocks = scan_fences(raw)
+    entry_point = spec.get("requires_def")
     payload, span_start, span_end, source_block, json_value, json_error, syntax_error, unclosed = (
-        _extract(raw, fmt, extractor, blocks)
+        _extract(raw, fmt, extractor, blocks, str(entry_point) if entry_point else None)
     )
 
     # 未閉じフェンスは**採点対象のブロック**から導く。応答の最後のブロックで

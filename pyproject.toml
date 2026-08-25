@@ -45,3 +45,14 @@ ignore = ["RUF001", "RUF002", "RUF003"]  # 日本語コメント中の全角記�
 python_version = "3.11"
 files = ["src/quirkbench"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/quirkbench"]
+# **サンドボックス内で走る子は計測できない。** 別プロセス・別インタプリタで、
+# しかも隔離されているので coverage の書き出し先に届かない。実際には
+# tests/test_sandbox.py が 21 件の実行で毎回通しているが、行カバレッジには出ない。
+# ここを除外しないと「テストしていない」ように見え、逆に本当の穴が埋もれる。
+omit = [
+    "src/quirkbench/sandbox/_child.py",
+    "src/quirkbench/sandbox/_canary_child.py",
+]

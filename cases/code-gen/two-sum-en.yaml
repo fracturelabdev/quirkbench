@@ -1,0 +1,40 @@
+# code-gen 次元 — 実行採点。英語版。
+# 対訳の ja 版と対で ja_penalty を出す（FLB-QB-001 §4）
+id: code-gen-two-sum-en
+dim: code-gen
+lang: en
+pair: code-gen-two-sum-ja
+
+prompt: |
+  Implement the following function in Python. Write nothing but the code.
+
+  def two_sum(nums: list[int], target: int) -> list[int]:
+      """Return the ascending indices of the two elements in nums that sum to target.
+      Exactly one solution exists. You may not use the same element twice."""
+
+options:
+  num_predict: 512
+
+failure:
+  format: python
+  extract: fenced_or_whole   # entry_point を top-level に持つ最後の有効候補（§12.4）
+  language: none             # コードは言語判定を適用しない
+  min_tokens: 20
+
+score:
+  kind: pytest
+  entry_point: two_sum
+  timeout_seconds: 30        # 非停止の検出だけが目的（§12.5）
+  test: |
+    def check(candidate):
+        assert sorted(candidate([2, 7, 11, 15], 9)) == [0, 1]
+        assert sorted(candidate([3, 2, 4], 6)) == [1, 2]
+        assert sorted(candidate([3, 3], 6)) == [0, 1]
+  reference: |
+    def two_sum(nums, target):
+        seen = {}
+        for i, n in enumerate(nums):
+            if target - n in seen:
+                return [seen[target - n], i]
+            seen[n] = i
+        return []
