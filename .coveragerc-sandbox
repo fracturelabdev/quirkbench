@@ -1,0 +1,13 @@
+# macOS の `sandbox` ジョブ用。境界（sandbox/）と、その入口（gate.py）だけを測る。
+#
+# **`--cov=src/quirkbench/gate` は効かない。** coverage はこれをパッケージ名として
+# 解決しようとして失敗し、`Module ... was never imported` と警告を出すだけで
+# 静かに対象から外れる。CI は緑のまま「gate.py も測っている」ことになっていた。
+# include で明示する。
+[run]
+include =
+    */quirkbench/sandbox/*
+    */quirkbench/gate.py
+omit =
+    */quirkbench/sandbox/_child.py
+    */quirkbench/sandbox/_canary_child.py

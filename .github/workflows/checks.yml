@@ -96,10 +96,14 @@ jobs:
       # 境界を外した対照実験まで含めて確かめる。
       # sandbox/ と gate.py のカバレッジも 90% を要求する。ubuntu 側で外した分を
       # ここで取り返さないと、**境界だけ検査が緩い**状態になる。
+      #
+      # 範囲は .coveragerc-sandbox で指定する。`--cov=src/quirkbench/gate` と書くと
+      # coverage がパッケージ名として解決に失敗し、**警告を出して静かに対象から外れる**。
+      # 実際 CI は緑のまま gate.py を一度も測っていなかった（入れたら 90% を割った）。
       - name: 境界テストとカバレッジ
         run: >
-          uv run pytest -q tests/test_sandbox.py
-          --cov=src/quirkbench/sandbox --cov=src/quirkbench/gate
+          uv run pytest -q tests/test_sandbox.py tests/test_gate.py
+          --cov --cov-config=.coveragerc-sandbox
           --cov-report=term --cov-fail-under=90
 
       # 境界のガードは tools/mutate.py の通常セットでは届かない。
