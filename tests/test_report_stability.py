@@ -123,6 +123,33 @@ def test_replicate_count_matches_case_count(tmp_path) -> None:  # type: ignore[n
             assert len(model.replicates) == dim.cases
 
 
+def test_a_replicate_that_yields_no_z_is_not_dropped(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """**測っていないものを、最も安定した値として出さない。**
+
+    識別力のあるケースが 1 件しかない次元では、そのケースを抜くと σ=0 になって
+    z が出ない。その複製を黙って捨てると、**残った 1 本だけで幅 0.00 =
+    完全に安定**と表示される。実際には**その z はケース 1 件に依存している**
+    という、最も不安定な状態である。
+    """
+    cases = [make_case("flat", "reason", "alpha"), make_case("real", "reason", "beta")]
+    store = build(
+        tmp_path,
+        # `flat` は全モデル同点 → 識別力なし。`real` だけが z を作る
+        [("A", "flat", 0.5), ("B", "flat", 0.5), ("A", "real", 0.0), ("B", "real", 1.0)],
+    )
+    result = stability(store, cases)
+    dim = next(d for d in result.dims if d.dim == "reason")
+
+    model_a = next(m for m in dim.models if m.model == "A")
+    assert len(model_a.replicates) == 1
+    assert model_a.missing == 1
+    assert model_a.complete is False
+    # **ここが本体。** 幅 0.00 を「安定している」として出してはいけない
+    assert dim.measurable is False
+    assert dim.why_not is not None and "複製で z が出ない" in dim.why_not
+    assert "reason" in result.skipped
+
+
 def test_tasks_counts_distinct_tasks_not_cases(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """**同じ問題を ja/en で聞いても観測は 1 件**（§17.1）。"""
     cases = [
@@ -146,7 +173,7 @@ def test_single_case_dimension_is_reported_not_dropped(tmp_path) -> None:  # typ
     dim = next(d for d in result.dims if d.dim == "longctx")
     assert dim.measurable is False
     assert dim.models == ()
-    assert dim.why_not == "ケースが 1 件なので抜けるものが無い"
+    assert dim.why_not == "独立した観測が 1 件なので抜けるものが無い"
 
 
 def test_dimension_without_generations_says_so(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -159,7 +186,8 @@ def test_dimension_without_generations_says_so(tmp_path) -> None:  # type: ignor
     store = build(tmp_path, DISAGREE)  # instruct 側の生成は書かない
     result = stability(store, cases)
     dim = next(d for d in result.dims if d.dim == "instruct")
-    assert dim.cases == 2
+    # **`cases` は「この run で採点された件数」**。定義済みの件数ではない
+    assert dim.cases == 0
     assert dim.observed is False
     assert dim.measurable is False
     assert dim.why_not == "この run に採点済みの生成が無い"
@@ -187,6 +215,75 @@ def test_case_spreads_are_in_dimension_order_not_by_size(tmp_path) -> None:  # t
     result = stability(store, DISAGREE_CASES + AGREE_CASES)
     order = [(c.dim, c.case_id) for c in result.case_spreads]
     assert order == sorted(order)
+
+
+def test_the_dropped_unit_is_the_task_not_the_case(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """**抜く単位は `task`**（§17.1）。
+
+    ja/en の対訳をケース単位で抜くと**相手が残る**ので、その観測は消えない。
+    消えないものを抜いても「この観測が無かったらどうなるか」には答えていない。
+    """
+    cases = [
+        make_case("a_ja", "reason", "alpha", lang="ja"),
+        make_case("a_en", "reason", "alpha", lang="en"),
+        make_case("b_ja", "reason", "beta", lang="ja"),
+        make_case("b_en", "reason", "beta", lang="en"),
+    ]
+    store = build(
+        tmp_path,
+        [
+            ("A", "a_ja", 1.0),
+            ("B", "a_ja", 0.0),
+            ("A", "a_en", 1.0),
+            ("B", "a_en", 0.0),
+            ("A", "b_ja", 0.0),
+            ("B", "b_ja", 1.0),
+            ("A", "b_en", 0.0),
+            ("B", "b_en", 1.0),
+        ],
+    )
+    dim = next(d for d in stability(store, cases).dims if d.dim == "reason")
+    assert dim.cases == 4
+    assert dim.tasks == 2
+    # **複製はタスクの数だけ。** ケース単位なら 4 本になる
+    model_a = next(m for m in dim.models if m.model == "A")
+    assert len(model_a.replicates) == 2
+    # alpha を抜けば beta だけ（A は負）、beta を抜けば alpha だけ（A は正）
+    assert sorted(model_a.replicates) == [-1.0, 1.0]
+
+
+def test_an_unscored_case_does_not_pad_the_observation_count(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """**定義済みのケース数で数えると、生成が無いケースが観測に混じる。**
+
+    生成が無いケースを抜いても集計は動かないので、その複製は恒等になり
+    幅が 0 に寄る。**観測 1 件の次元が「完全に安定」と出る。**
+    """
+    cases = [
+        make_case("real", "reason", "alpha"),
+        make_case("never_run", "reason", "beta"),
+    ]
+    store = build(tmp_path, [("A", "real", 1.0), ("B", "real", 0.0)])
+    result = stability(store, cases)
+    dim = next(d for d in result.dims if d.dim == "reason")
+    assert dim.cases == 1
+    assert dim.tasks == 1
+    assert dim.measurable is False
+    assert dim.why_not == "独立した観測が 1 件なので抜けるものが無い"
+
+
+def test_a_replicate_that_is_numerically_zero_counts_as_crossing() -> None:
+    """**最下位ビットの符号で判定を変えない。**
+
+    実データで `2.05e-17` という複製が出た。数値としては 0 だが、
+    厳密比較では正なので「0 をまたぐ」から漏れる。
+    同じ次元の別モデルはたまたま負側に落ちて拾われていた。
+    """
+    positive_dust = ModelStability(model="A", z_full=0.6, replicates=(0.45, 2.05e-17))
+    assert positive_dust.crosses_zero is True
+    negative_dust = ModelStability(model="A", z_full=-0.6, replicates=(-0.45, -2.05e-17))
+    assert negative_dust.crosses_zero is True
+    clear = ModelStability(model="A", z_full=0.6, replicates=(0.45, 0.25))
+    assert clear.crosses_zero is False
 
 
 def test_crosses_zero_counts_touching_zero() -> None:

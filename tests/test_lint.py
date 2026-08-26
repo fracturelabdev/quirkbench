@@ -332,3 +332,66 @@ def test_the_context_check_applies_to_every_dimension() -> None:
         Path("wide.yaml"),
     )
     assert "prompt_fits_context" in _checks(case)
+
+
+# ------------------------------------------------------------ task の数え方
+#
+# **この 3 ルールにはテストが 1 件も無かった**（独立レビューの指摘）。
+# ロジックは動いていたが、`lint()` から `_lint_tasks` の呼び出しを消しても
+# 1 件も落ちない状態だった。**呼び出しを検証しないテストはガードではない。**
+
+
+def _task_case(case_id: str, dim: str, task: str, pair: str | None = None):
+    raw = {
+        "id": case_id,
+        "dim": dim,
+        "task": task,
+        "lang": "ja",
+        "prompt": "p",
+        "failure": {"format": "none", "language": "none", "min_tokens": 1},
+        "score": {"kind": "exact", "match": "equals", "expect": "1"},
+    }
+    if pair is not None:
+        raw["pair"] = pair
+    return parse_case(raw, Path(f"{case_id}.yaml"))
+
+
+def _task_checks(cases) -> set[str]:
+    """**既存の `_checks` は Case 1 件を取る。** 同名で定義すると後勝ちで上書きされ、
+    このファイルの既存テスト 15 件が黙って壊れる（実際に踏んだ）。"""
+    return {issue.check for issue in lint(cases)}
+
+
+def test_task_confined_to_one_dimension_passes() -> None:
+    """正常系。**落ちないことも確かめる** — 常に落ちる検査はゲートにならない。"""
+    cases = [_task_case("a", "reason", "alpha"), _task_case("b", "instruct", "beta")]
+    assert "task_spans_dims" not in _task_checks(cases)
+
+
+def test_task_spanning_two_dimensions_is_rejected() -> None:
+    """**次元をまたぐ task があると観測数が数えられない**（§17.1）。"""
+    cases = [_task_case("a", "reason", "same"), _task_case("b", "instruct", "same")]
+    assert "task_spans_dims" in _task_checks(cases)
+
+
+def test_pair_with_a_different_task_is_rejected() -> None:
+    """**対訳は定義上「同じ問題を別の言語で聞いたもの」**（§14.7）。"""
+    cases = [
+        _task_case("a", "reason", "alpha", pair="b"),
+        _task_case("b", "reason", "beta", pair="a"),
+    ]
+    assert "pair_task_mismatch" in _task_checks(cases)
+
+
+def test_pair_with_the_same_task_passes() -> None:
+    cases = [
+        _task_case("a", "reason", "same", pair="b"),
+        _task_case("b", "reason", "same", pair="a"),
+    ]
+    assert "pair_task_mismatch" not in _task_checks(cases)
+
+
+def test_pair_pointing_nowhere_is_rejected() -> None:
+    """**宛先の無い pair は黙って無視される。** ja_penalty の母数から静かに消える。"""
+    cases = [_task_case("a", "reason", "alpha", pair="does-not-exist")]
+    assert "pair_missing" in _task_checks(cases)

@@ -19,8 +19,16 @@ from ..cases import Case
 from ..store import RunStore
 from .aggregate import Aggregation, aggregate
 
-#: jackknife に最低限要るケース数。1 件だと抜いた時点で次元が消える
-MIN_CASES_FOR_JACKKNIFE = 2
+#: jackknife に最低限要る**観測**数。1 件だと抜いた時点で次元が消える
+MIN_TASKS_FOR_JACKKNIFE = 2
+
+#: z を 0 と見なす幅。`aggregate.SAME_SCORE_EPSILON` と揃える。
+#:
+#: **これが無いと最下位ビットの符号で判定が変わる。** 実データで
+#: `2.05e-17` という複製が出た — 数値としては 0 だが厳密比較では正なので、
+#: 「0 をまたぐ」から漏れた。同じ次元の別モデルはたまたま負側に落ちて拾われており、
+#: **拾えるかどうかが丸め誤差で決まっていた。**
+Z_ZERO_EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
@@ -30,20 +38,35 @@ class ModelStability:
     model: str
     #: 全ケースで測った z（README に載る値）
     z_full: float
-    #: 1 件抜きの再集計で得た z（抜いたケースの数だけある）
+    #: 1 件抜きの再集計で得た z。**抜いたケースの数と一致しなければならない**
     replicates: tuple[float, ...]
+    #: z が出なかった複製の数。**0 でなければ幅も符号も意味を持たない**
+    missing: int = 0
 
+    # **`complete` が False のとき、下の 3 つは意味を持たない。**
+    # 落ちないようにしてあるだけで、読んではいけない（`measurable` が False になる）
     @property
     def z_min(self) -> float:
-        return min(self.replicates)
+        return min(self.replicates, default=0.0)
 
     @property
     def z_max(self) -> float:
-        return max(self.replicates)
+        return max(self.replicates, default=0.0)
 
     @property
     def width(self) -> float:
         return self.z_max - self.z_min
+
+    @property
+    def complete(self) -> bool:
+        """抜いた数だけ複製が揃っているか。
+
+        **揃っていないときの幅は 0 に寄る。** 1 件抜いて z が出なくなった次元は
+        「その z がそのケース 1 件に依存している」という意味で**最も不安定**なのに、
+        残った複製だけで幅を出すと **0.00 = 完全に安定**と表示される。
+        **測っていないものを、最も安定した値として出してはいけない。**
+        """
+        return self.missing == 0 and bool(self.replicates)
 
     @property
     def crosses_zero(self) -> bool:
@@ -53,15 +76,16 @@ class ModelStability:
         z が 0 の複製は、その回に限れば偏りを検出できていない。
         **見逃すより多めに拾う側に倒す。**
         """
-        return self.z_min <= 0.0 <= self.z_max
+        return self.z_min <= Z_ZERO_EPSILON and self.z_max >= -Z_ZERO_EPSILON
 
 
 @dataclass(frozen=True)
 class DimStability:
     dim: str
-    #: ケースの件数（`id` の数）
+    #: **この run で採点された**ケースの件数。定義済みの件数ではない
     cases: int
-    #: **独立な観測の件数**（`task` の種類）。§17.1 — `cases` と一致しない
+    #: **独立な観測の件数**（`task` の種類）。§17.1 — `cases` と一致しない。
+    #: **1 件抜きはこの単位で行うので、複製もこの数だけ要る**
     tasks: int
     #: この run に採点済みの生成があるか。**ケースが定義されていることとは別**
     observed: bool
@@ -69,7 +93,12 @@ class DimStability:
 
     @property
     def measurable(self) -> bool:
-        return self.observed and self.cases >= MIN_CASES_FOR_JACKKNIFE and bool(self.models)
+        return (
+            self.observed
+            and self.tasks >= MIN_TASKS_FOR_JACKKNIFE
+            and bool(self.models)
+            and all(m.complete for m in self.models)
+        )
 
     @property
     def why_not(self) -> str | None:
@@ -81,10 +110,14 @@ class DimStability:
         """
         if not self.observed:
             return "この run に採点済みの生成が無い"
-        if self.cases < MIN_CASES_FOR_JACKKNIFE:
-            return f"ケースが {self.cases} 件なので抜けるものが無い"
+        if self.tasks < MIN_TASKS_FOR_JACKKNIFE:
+            return f"独立した観測が {self.tasks} 件なので抜けるものが無い"
         if not self.models:
             return "次元内の σ が 0 なので z が出ていない"
+        incomplete = [m for m in self.models if not m.complete]
+        if incomplete:
+            worst = max(m.missing for m in incomplete)
+            return f"{worst} 件の複製で z が出ない（この次元の z が特定のケースだけで決まっている）"
         return None
 
     @property
@@ -132,44 +165,70 @@ def stability(store: RunStore, cases: list[Case]) -> Stability:
 
     full_z = {d.dim: dict(d.z_by_model) for d in full.dims}
     observed_dims = {d.dim for d in full.dims}
+    # **その run で実際に採点されたケースだけを観測とみなす。**
+    # 定義済みの件数で数えると、生成が無いケースを抜いた複製が**恒等**になり、
+    # 幅が 0 に寄る。観測 1 件の次元が「完全に安定」と出る（独立レビューで指摘された）
+    scored_ids = {stat.case_id for stat in full.cases}
 
     for dim in sorted(by_dim):
-        in_dim = by_dim[dim]
-        tasks = len({c.task for c in in_dim})
+        in_dim = [c for c in by_dim[dim] if c.id in scored_ids]
+        # **抜く単位は `task`。** §17.1 で「独立した観測の単位は task」と定めた以上、
+        # ケース単位で抜くと ja/en の片割れが残り、**その観測は消えない**。
+        # 消えないものを抜いても、答えたい問い（この観測が無かったらどうなるか）に届かない
+        tasks = sorted({c.task for c in in_dim})
         observed = dim in observed_dims
-        if not observed or len(in_dim) < MIN_CASES_FOR_JACKKNIFE:
+        if not observed or len(tasks) < MIN_TASKS_FOR_JACKKNIFE:
             # **黙って飛ばさない。** 飛ばしたことが出ないと、
             # 表に出ていない次元が「安定していた」と読まれる
             result.skipped.append(dim)
             result.dims.append(
-                DimStability(dim=dim, cases=len(in_dim), tasks=tasks, observed=observed, models=())
+                DimStability(
+                    dim=dim,
+                    cases=len(in_dim),
+                    tasks=len(tasks),
+                    observed=observed,
+                    models=(),
+                )
             )
             continue
 
         reps: dict[str, list[float]] = {}
-        for dropped in in_dim:
-            subset = [c for c in cases if c.id != dropped.id]
+        # **z が出なかった複製を数える。** 黙って落とすと、複製が 1 本しか無い次元が
+        # 幅 0.00 = 完全に安定として表示される（独立レビューで指摘された）
+        seen_models = set(full_z.get(dim, {}))
+        missing: dict[str, int] = {}
+        for dropped_task in tasks:
+            subset = [c for c in cases if not (c.dim == dim and c.task == dropped_task)]
             replicate = aggregate(store, subset)
+            got: dict[str, float] = {}
             for stat in replicate.dims:
                 if stat.dim != dim:
                     continue
-                for model, value in stat.z_by_model.items():
-                    reps.setdefault(model, []).append(value)
+                got = dict(stat.z_by_model)
+            seen_models |= set(got)
+            for model in seen_models:
+                if model in got:
+                    reps.setdefault(model, []).append(got[model])
+                else:
+                    missing[model] = missing.get(model, 0) + 1
 
         models = tuple(
             ModelStability(
                 model=model,
                 z_full=full_z.get(dim, {}).get(model, 0.0),
-                replicates=tuple(values),
+                replicates=tuple(reps.get(model, ())),
+                missing=missing.get(model, 0),
             )
-            for model, values in sorted(reps.items())
-            if values
+            for model in sorted(seen_models)
         )
-        if not models:
+        dim_stat = DimStability(
+            dim=dim, cases=len(in_dim), tasks=len(tasks), observed=observed, models=models
+        )
+        # **測れなかったものは、理由が何であれ `skipped` に載せる。**
+        # 載せ忘れると、表に出ない次元が「安定していた」と読まれる
+        if not dim_stat.measurable:
             result.skipped.append(dim)
-        result.dims.append(
-            DimStability(dim=dim, cases=len(in_dim), tasks=tasks, observed=observed, models=models)
-        )
+        result.dims.append(dim_stat)
     return result
 
 

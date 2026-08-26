@@ -35,6 +35,48 @@ BOUNDARY_ARGS = ["tests/test_sandbox.py"]
 
 M = [
     (
+        "lint.py",
+        "task の検査そのものを呼ばない",
+        "    issues.extend(_lint_tasks(cases))\n",
+        "",
+    ),
+    (
+        "lint.py",
+        "task が次元をまたいでも通す",
+        "        if len(dims) > 1:",
+        "        if False:",
+    ),
+    (
+        "lint.py",
+        "対訳の task が食い違っても通す",
+        "        if other.task != case.task:",
+        "        if False:",
+    ),
+    (
+        "report/stability.py",
+        "0 判定の許容幅を外す（丸め誤差の符号で判定が変わる）",
+        "        return self.z_min <= Z_ZERO_EPSILON and self.z_max >= -Z_ZERO_EPSILON",
+        "        return self.z_min <= 0.0 <= self.z_max",
+    ),
+    (
+        "report/stability.py",
+        "採点されていないケースも観測に数える（恒等な複製が混ざる）",
+        "        in_dim = [c for c in by_dim[dim] if c.id in scored_ids]",
+        "        in_dim = list(by_dim[dim])",
+    ),
+    (
+        "report/stability.py",
+        "z が出なかった複製を黙って落とす（幅 0.00 = 安定に見せる）",
+        "                else:\n                    missing[model] = missing.get(model, 0) + 1\n",
+        "",
+    ),
+    (
+        "report/stability.py",
+        "複製が揃っていなくても測れたことにする",
+        "            and all(m.complete for m in self.models)\n",
+        "",
+    ),
+    (
         "report/stability.py",
         "測れなかった理由を 1 つに潰す（生成が無いのをケース不足と言う）",
         '            return "この run に採点済みの生成が無い"\n',
@@ -49,20 +91,20 @@ M = [
     (
         "report/stability.py",
         "1 件抜きをやめる（全件のまま再集計する）",
-        "            subset = [c for c in cases if c.id != dropped.id]",
+        "            subset = [c for c in cases if not (c.dim == dim and c.task == dropped_task)]",
         "            subset = list(cases)",
     ),
     (
         "report/stability.py",
         "区間が 0 をまたぐ判定を無効化",
-        "        return self.z_min <= 0.0 <= self.z_max",
+        "        return self.z_min <= Z_ZERO_EPSILON and self.z_max >= -Z_ZERO_EPSILON",
         "        return False",
     ),
     (
         "report/stability.py",
         "観測数をケース数で数える（task を無視）",
-        "        tasks = len({c.task for c in in_dim})",
-        "        tasks = len(in_dim)",
+        "        tasks = sorted({c.task for c in in_dim})",
+        "        tasks = [c.id for c in in_dim]",
     ),
     (
         "report/stability.py",
@@ -72,9 +114,9 @@ M = [
     ),
     (
         "report/stability.py",
-        "ケース 1 件でも jackknife を試みる",
-        "MIN_CASES_FOR_JACKKNIFE = 2",
-        "MIN_CASES_FOR_JACKKNIFE = 1",
+        "観測 1 件でも jackknife を試みる",
+        "MIN_TASKS_FOR_JACKKNIFE = 2",
+        "MIN_TASKS_FOR_JACKKNIFE = 1",
     ),
     (
         "report/stability.py",
