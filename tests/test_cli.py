@@ -13,6 +13,7 @@ from tests.test_runner_integration import FakeOllama
 CASE = {
     "id": "a",
     "dim": "reason",
+    "task": "t",
     "lang": "ja",
     "prompt": "p",
     "score": {"kind": "exact"},
@@ -123,6 +124,7 @@ def _write_case(root: Path) -> None:
             {
                 "id": "c1",
                 "dim": "instruct",
+                "task": "t",
                 "lang": "ja",
                 "prompt": "p",
                 "failure": {"format": "json", "extract": "fenced_or_first_object", "min_tokens": 4},
@@ -212,7 +214,7 @@ def test_lint_cases_fails_on_broken_case(tmp_path, capsys) -> None:  # type: ign
     root = tmp_path / "cases" / "code-gen"
     root.mkdir(parents=True)
     (root / "bad.yaml").write_text(
-        "id: bad\ndim: code-gen\nlang: ja\nprompt: p\n"
+        "id: bad\ndim: code-gen\nlang: ja\ntask: bad\nprompt: p\n"
         "options: {num_predict: 512}\n"
         "failure: {format: python, extract: fenced_or_whole, language: none, min_tokens: 20}\n"
         "score:\n  kind: pytest\n  entry_point: f\n  timeout_seconds: 2\n"
@@ -298,6 +300,7 @@ def _write_two_cases(cases: Path) -> None:
                 {
                     "id": case_id,
                     "dim": "instruct",
+                    "task": "t",
                     "lang": "ja",
                     "prompt": f"p-{case_id}",
                     "failure": {"format": "json"},

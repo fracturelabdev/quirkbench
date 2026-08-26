@@ -35,6 +35,72 @@ BOUNDARY_ARGS = ["tests/test_sandbox.py"]
 
 M = [
     (
+        "report/stability.py",
+        "測れなかった理由を 1 つに潰す（生成が無いのをケース不足と言う）",
+        '            return "この run に採点済みの生成が無い"\n',
+        "",
+    ),
+    (
+        "report/stability.py",
+        "生成の有無を見ずに測れることにする",
+        "        observed = dim in observed_dims",
+        "        observed = True",
+    ),
+    (
+        "report/stability.py",
+        "1 件抜きをやめる（全件のまま再集計する）",
+        "            subset = [c for c in cases if c.id != dropped.id]",
+        "            subset = list(cases)",
+    ),
+    (
+        "report/stability.py",
+        "区間が 0 をまたぐ判定を無効化",
+        "        return self.z_min <= 0.0 <= self.z_max",
+        "        return False",
+    ),
+    (
+        "report/stability.py",
+        "観測数をケース数で数える（task を無視）",
+        "        tasks = len({c.task for c in in_dim})",
+        "        tasks = len(in_dim)",
+    ),
+    (
+        "report/stability.py",
+        "測れなかった次元を黙って落とす",
+        "            result.skipped.append(dim)\n",
+        "",
+    ),
+    (
+        "report/stability.py",
+        "ケース 1 件でも jackknife を試みる",
+        "MIN_CASES_FOR_JACKKNIFE = 2",
+        "MIN_CASES_FOR_JACKKNIFE = 1",
+    ),
+    (
+        "report/stability.py",
+        "ケースの実効幅を最大値そのものにする",
+        "                spread=max(values) - min(values),",
+        "                spread=max(values),",
+    ),
+    (
+        "report/stability.py",
+        "ケース表を幅の降順に並べる（順位表にする）",
+        "    return sorted(out, key=lambda c: (c.dim, c.case_id))",
+        "    return sorted(out, key=lambda c: -c.spread)",
+    ),
+    (
+        "report/stability.py",
+        "全件の z を 0 に固定する",
+        "                z_full=full_z.get(dim, {}).get(model, 0.0),",
+        "                z_full=0.0,",
+    ),
+    (
+        "report/render_stability.py",
+        "0 をまたいだ印を出さない",
+        '                        CROSS_MARK if model.crosses_zero else "",',
+        '                        "",',
+    ),
+    (
         "parse.py",
         "フェンス行を前置きから除く処理を無効化",
         'preamble = strip_fence_lines(raw[:span_start]).strip() if fmt != "none" else ""',

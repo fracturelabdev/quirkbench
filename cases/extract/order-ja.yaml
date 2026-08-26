@@ -1,0 +1,32 @@
+# extract 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `vet` は人物、こちらは伝票。**数値のキーが 3 つある**ので、
+# 文字列だけの抽出とは違う失敗の仕方が出る
+id: extract-order-ja
+dim: extract
+lang: ja
+task: order
+pair: extract-order-en
+
+prompt: |
+  次の文から情報を抽出し、JSON で出力してください。JSON 以外は書かないでください。
+  キーは order_id, item, quantity, unit_price, city の 5 つです。
+
+  「注文番号 4821 で、マグカップが 3 個、1 個あたり 780 円で、名古屋市に発送されました。」
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_keys
+  expect:
+    order_id: 4821
+    item: マグカップ
+    quantity: 3
+    unit_price: 780
+    city: 名古屋市

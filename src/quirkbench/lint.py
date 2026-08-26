@@ -287,4 +287,59 @@ def lint(cases: list[Case]) -> list[LintIssue]:
                     f"{MAX_ASSERT_SPREAD:.0f} 倍以内に揃える",
                 )
             )
+    issues.extend(_lint_tasks(cases))
+    return issues
+
+
+def _lint_tasks(cases: list[Case]) -> list[LintIssue]:
+    """`task` が独立な観測の単位として使える形になっているかを見る（§17.1）。
+
+    **数え間違いは黙って起きる。** `task` がずれても run は通り、
+    レポートは出て、**観測数だけが実態と違う数字になる。**
+    """
+    issues: list[LintIssue] = []
+    by_id = {case.id: case for case in cases}
+
+    dims_of_task: dict[str, set[str]] = defaultdict(set)
+    for case in cases:
+        dims_of_task[case.task].add(case.dim)
+    for task, dims in sorted(dims_of_task.items()):
+        if len(dims) > 1:
+            for case in cases:
+                if case.task == task:
+                    issues.append(
+                        LintIssue(
+                            case.id,
+                            "task_spans_dims",
+                            f"task {task!r} が次元 {sorted(dims)} にまたがっている。"
+                            "task は次元の中で閉じていなければ観測数を数えられない",
+                        )
+                    )
+
+    for case in cases:
+        if case.pair is None:
+            continue
+        other = by_id.get(case.pair)
+        if other is None:
+            # **宛先の無い pair は黙って無視される。** ja_penalty は対を見つけられず、
+            # 母数から静かに消えるだけでエラーにならない（§14.7）
+            issues.append(
+                LintIssue(
+                    case.id,
+                    "pair_missing",
+                    f"pair の宛先 {case.pair!r} が存在しない。ja_penalty から黙って落ちる",
+                )
+            )
+            continue
+        # **対訳は定義上「同じ問題を別の言語で聞いたもの」**（§14.7）。
+        # task が違うなら、どちらかの宣言が間違っている
+        if other.task != case.task:
+            issues.append(
+                LintIssue(
+                    case.id,
+                    "pair_task_mismatch",
+                    f"対訳の相手 {case.pair!r} の task が {other.task!r} で一致しない。"
+                    "対訳は同じ task でなければ ja_penalty と観測数が食い違う",
+                )
+            )
     return issues

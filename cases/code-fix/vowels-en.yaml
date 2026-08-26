@@ -1,0 +1,38 @@
+# code-fix 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `median` は境界（偶数個）の取りこぼし、こちらは条件の取りこぼし（大文字）
+id: code-fix-vowels-en
+dim: code-fix
+lang: en
+task: vowels
+pair: code-fix-vowels-ja
+
+prompt: |
+  The following function has a bug. Output only the corrected function in
+  Python. Output nothing but code.
+
+  def count_vowels(text: str) -> int:
+      """Return how many vowels a, e, i, o, u occur in text.
+      Uppercase vowels count too."""
+      return sum(1 for c in text if c in "aeiou")
+
+options:
+  num_predict: 512
+
+failure:
+  format: python
+  extract: fenced_or_whole
+  language: none
+  min_tokens: 20
+
+score:
+  kind: pytest
+  entry_point: count_vowels
+  timeout_seconds: 30
+  test: |
+    def check(candidate):
+        assert candidate("Hello") == 2
+        assert candidate("AEIOU") == 5
+        assert candidate("xyz") == 0
+  reference: |
+    def count_vowels(text):
+        return sum(1 for c in text.lower() if c in "aeiou")

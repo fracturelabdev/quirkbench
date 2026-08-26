@@ -2,6 +2,7 @@
 id: ideate-coffee-shop-en
 dim: ideate
 lang: en
+task: coffee-shop
 pair: ideate-coffee-shop-ja
 
 prompt: |

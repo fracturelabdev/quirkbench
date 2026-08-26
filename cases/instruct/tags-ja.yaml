@@ -3,6 +3,7 @@
 id: instruct-tags-ja
 dim: instruct
 lang: ja
+task: tags
 pair: instruct-tags-en
 
 prompt: |

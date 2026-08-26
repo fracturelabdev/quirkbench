@@ -26,13 +26,17 @@ import sys
 
 from quirkbench.cases import load_cases
 from quirkbench.report.aggregate import aggregate
+from quirkbench.report.stability import stability
 from quirkbench.store import RunStore
 
 QB = pathlib.Path(__file__).resolve().parent.parent
 
 #: README がどの run を引いているか。**README 側に書いてある値を読む**ので、
 #: run を差し替えたときにここを直し忘れても照合が空振りしない
-RUN_MARKER = re.compile(r"run `([\w.-]+)`")
+#: **来歴の行に固定する。** 単に `run \`X\`` を探すと、本文中の別の run の話
+#: （キャッシュの説明など）を拾う。実際 README の先頭から 2 番目までに
+#: 過去の run への言及があり、**照合が古い run のデータに対して回っていた。**
+RUN_MARKER = re.compile(r"^\| *測定日 *\|.*run `([\w.-]+)`", re.M)
 
 
 def main() -> int:
@@ -54,8 +58,11 @@ def main() -> int:
 
     match = RUN_MARKER.search(readme)
     if match is None:
-        problems.append("README に `run `...`` の記載が無い。どの run の数字か辿れない")
+        problems.append(
+            "README の来歴表に `| 測定日 | ... run `X` |` の行が無い。どの run の数字か辿れない"
+        )
         return _report(problems, checked)
+    checked += 1
     run_id = match.group(1)
 
     store = RunStore(QB / "runs", run_id)
@@ -95,7 +102,41 @@ def main() -> int:
                 f"ja_penalty がずれている {dim} × {model}: README {value:+.3f} / 実測 {want:+.3f}"
             )
 
-    # --- 3) 母数。**「母数」行だけを見る。** 文書全体を検索すると、
+    # --- 3) 結論の安定性（§17）。
+    #
+    # **数字だけ更新して安定性を置き去りにできないようにする。** ケースを 1 件でも
+    # 足せば幅は変わるので、片方だけ新しいと、**古い安定性が新しい数字を裏書き**する。
+    stab = stability(store, load_cases(QB / "cases"))
+    expected_stab = {
+        d.dim: (d.tasks, d.max_width, sum(1 for m in d.models if m.crosses_zero))
+        for d in stab.dims
+        if d.measurable
+    }
+    seen_dims = set()
+    for dim, tasks, width, crossings in _parse_stability(readme):
+        seen_dims.add(dim)
+        want = expected_stab.get(dim)
+        if want is None:
+            problems.append(f"README の安定性に実データで測れていない次元 {dim}")
+            continue
+        checked += 1
+        if tasks != want[0]:
+            problems.append(f"観測数がずれている {dim}: README {tasks} / 実測 {want[0]}")
+        if abs(width - want[1]) > 5e-3:
+            problems.append(
+                f"1 件抜きの幅がずれている {dim}: README {width:.2f} / 実測 {want[1]:.2f}"
+            )
+        if crossings != want[2]:
+            problems.append(
+                f"0 をまたぐ本数がずれている {dim}: README {crossings} / 実測 {want[2]}"
+            )
+    if expected_stab and not seen_dims:
+        problems.append("README に安定性の表が無い。z だけが更新されうる")
+    else:
+        for dim in sorted(set(expected_stab) - seen_dims):
+            problems.append(f"README の安定性に載っていない次元 {dim}")
+
+    # --- 4) 母数。**「母数」行だけを見る。** 文書全体を検索すると、
     # 「ケース 3 件」のような別の文脈の数字を拾って毎回落ちる
     row = next((ln for ln in readme.splitlines() if ln.startswith("| 母数 ")), None)
     if row is None:
@@ -122,6 +163,30 @@ def _report(problems: list[str], checked: int) -> int:
         print(f"  NG  {line}", file=sys.stderr)
     print(f"  照合した項目: {checked} 件 / 指摘 {len(problems)} 件")
     return 1 if problems else 0
+
+
+def _parse_stability(readme: str) -> list[tuple[str, int, float, int]]:
+    """安定性の表を読む。**列の並びは 次元 / 観測数 / 最大幅 / またぐ本数。**"""
+    out: list[tuple[str, int, float, int]] = []
+    inside = False
+    for line in readme.splitlines():
+        if line.startswith("### 結論の安定性"):
+            inside = True
+            continue
+        if inside and line.startswith("#"):
+            break
+        if not inside or not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 4 or set(cells[0]) <= {"-", ":"}:
+            continue
+        dim = cells[0].strip("`* ")
+        try:
+            out.append((dim, int(cells[1]), float(cells[2]), int(cells[3])))
+        except ValueError:
+            # 見出し行。**黙って読み飛ばすのはここだけ**
+            continue
+    return out
 
 
 def _parse_matrix(readme: str, heading: str) -> list[tuple[str, str, float]]:

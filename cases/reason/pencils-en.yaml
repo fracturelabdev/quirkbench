@@ -1,0 +1,27 @@
+# reason 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `change` は 6 本中 5 本が 0.00 の floor だった（§17.4）。
+# **難度は当てずっぽうで決めず、候補 4 つを実測してから選んだ** — 1 seed で 2/6。
+id: reason-pencils-en
+dim: reason
+lang: en
+task: pencils
+pair: reason-pencils-ja
+
+prompt: |
+  Answer the following question. Output only the numeric answer.
+
+  There are 52 pencils. If you give 6 pencils to each person,
+  how many pencils are left over?
+
+options:
+  num_predict: 200
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: numeric
+  expect: 4
+  tolerance: 0

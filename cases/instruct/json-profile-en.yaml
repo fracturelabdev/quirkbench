@@ -2,6 +2,7 @@
 id: instruct-json-profile-en
 dim: instruct
 lang: en
+task: json-profile
 pair: instruct-json-profile-ja
 
 prompt: |

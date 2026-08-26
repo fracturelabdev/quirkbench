@@ -4,6 +4,7 @@
 id: longctx-warehouse-tail-ja
 dim: longctx
 lang: ja
+task: warehouse-tail
 
 prompt: |
   次の記録を読み、質問に答えてください。答えだけを出力してください。

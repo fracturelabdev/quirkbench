@@ -19,6 +19,7 @@ from quirkbench.scorers.code_gen import count_asserts, from_outcome
 RAW = {
     "id": "probe",
     "dim": "code-gen",
+    "task": "t",
     "lang": "ja",
     "prompt": "p",
     "options": {"num_predict": 512},

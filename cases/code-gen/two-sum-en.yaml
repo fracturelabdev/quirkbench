@@ -3,6 +3,7 @@
 id: code-gen-two-sum-en
 dim: code-gen
 lang: en
+task: two-sum
 pair: code-gen-two-sum-ja
 
 prompt: |

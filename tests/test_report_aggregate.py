@@ -25,6 +25,7 @@ def make_case(case_id: str, dim: str = "instruct", lang: str = "ja", pair: str |
     raw = {
         "id": case_id,
         "dim": dim,
+        "task": "t",
         "lang": lang,
         "prompt": "p",
         "failure": {"format": "json"},

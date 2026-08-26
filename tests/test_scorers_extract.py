@@ -20,6 +20,7 @@ def case_of(expect=None):
         {
             "id": "c",
             "dim": "extract",
+            "task": "t",
             "lang": "ja",
             "prompt": "p",
             "failure": {"format": "json", "extract": "fenced_or_first_object"},

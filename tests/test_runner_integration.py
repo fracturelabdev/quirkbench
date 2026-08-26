@@ -10,7 +10,14 @@ from quirkbench.runner import ContextOverflow, DigestDrift, run
 from quirkbench.store import RunStore
 
 CASE = parse_case(
-    {"id": "a", "dim": "reason", "lang": "ja", "prompt": "p", "score": {"kind": "exact"}},
+    {
+        "id": "a",
+        "dim": "reason",
+        "task": "t",
+        "lang": "ja",
+        "prompt": "p",
+        "score": {"kind": "exact"},
+    },
     Path("a.yaml"),
 )
 

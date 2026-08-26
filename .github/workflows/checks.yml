@@ -104,11 +104,19 @@ jobs:
           }
           # 2 モデルで差を付ける。差が無いと識別力なしになり、
           # z を出す経路が一度も通らない
+          #
+          # **ケースも 2 件要る。** 1 件だと 1 件抜きで次元が消えるので、
+          # `qb stability` の jackknife の経路が CI で一度も通らない（§17.2）
+          ok = '{"name": "Ichiro Tanaka", "age": 42, "occupation": "welder"}'
           rows = [
               {**base, "gen_id": "g0", "model": "m-a", "model_digest": "d-a",
-               "response": '{"name": "Ichiro Tanaka", "age": 42, "occupation": "welder"}'},
+               "response": ok},
               {**base, "gen_id": "g1", "model": "m-b", "model_digest": "d-b",
                "response": "not json at all"},
+              {**base, "gen_id": "g2", "model": "m-a", "model_digest": "d-a",
+               "case_id": "instruct-json-profile-ja", "response": "not json at all"},
+              {**base, "gen_id": "g3", "model": "m-b", "model_digest": "d-b",
+               "case_id": "instruct-json-profile-ja", "response": ok},
           ]
           (run / "generations.jsonl").write_text(
               "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
@@ -118,6 +126,12 @@ jobs:
           test -s reports/ci/report.md
           test -s reports/ci/compare.md
           grep -q "次元プロファイル" reports/ci/report.md
+          uv run qb stability --run ci
+          test -s reports/ci/stability.md
+          # **ケースが食い違う組で作ってある**ので、1 件抜きの経路を通れば
+          # 必ず 0 をまたぐ印が表に出る。出なければ jackknife が動いていない
+          grep -q "独立な観測" reports/ci/stability.md
+          grep -qE '^\|.*\?[[:space:]]*\|$' reports/ci/stability.md
 
       # src が tests を import していないこと。stub 実行器が本番の import 経路から
       # 到達できると、**サンドボックスを通さない実行**が 1 行で作れてしまう。

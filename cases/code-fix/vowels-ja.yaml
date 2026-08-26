@@ -1,0 +1,37 @@
+# code-fix 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `median` は境界（偶数個）の取りこぼし、こちらは条件の取りこぼし（大文字）
+id: code-fix-vowels-ja
+dim: code-fix
+lang: ja
+task: vowels
+pair: code-fix-vowels-en
+
+prompt: |
+  次の関数にはバグがあります。修正した関数だけを Python で出力してください。
+  コード以外は書かないでください。
+
+  def count_vowels(text: str) -> int:
+      """text に含まれる母音 a, e, i, o, u の個数を返す。大文字も数える。"""
+      return sum(1 for c in text if c in "aeiou")
+
+options:
+  num_predict: 512
+
+failure:
+  format: python
+  extract: fenced_or_whole
+  language: none
+  min_tokens: 20
+
+score:
+  kind: pytest
+  entry_point: count_vowels
+  timeout_seconds: 30
+  test: |
+    def check(candidate):
+        assert candidate("Hello") == 2
+        assert candidate("AEIOU") == 5
+        assert candidate("xyz") == 0
+  reference: |
+    def count_vowels(text):
+        return sum(1 for c in text.lower() if c in "aeiou")

@@ -16,6 +16,7 @@ from quirkbench.lint import MAX_ASSERTS, lint
 BASE = {
     "id": "probe",
     "dim": "code-gen",
+    "task": "t",
     "lang": "ja",
     "prompt": "p",
     "options": {"num_predict": 512},
@@ -103,6 +104,7 @@ def test_bundled_cases_pass_the_gate() -> None:
 IDEATE_RAW = {
     "id": "idea",
     "dim": "ideate",
+    "task": "t",
     "lang": "ja",
     "prompt": "5 つ考えてください",
     "failure": {"format": "none", "count": {"n": 5, "pattern": "numbered_list"}},
@@ -191,6 +193,7 @@ def test_single_item_request_is_rejected() -> None:
 ANSWER_RAW = {
     "id": "ans",
     "dim": "code-read",
+    "task": "t",
     "lang": "ja",
     "prompt": "p",
     "failure": {"format": "none"},
@@ -276,6 +279,7 @@ def test_a_prompt_that_overflows_num_ctx_is_rejected() -> None:
         {
             "id": "big",
             "dim": "longctx",
+            "task": "t",
             "lang": "ja",
             "prompt": "あ" * 4000,
             "options": {"num_ctx": 4096},
@@ -296,6 +300,7 @@ def test_a_prompt_with_headroom_passes() -> None:
         {
             "id": "ok",
             "dim": "longctx",
+            "task": "t",
             "lang": "ja",
             "prompt": "あ" * 1000,
             "options": {"num_ctx": 4096},
@@ -317,6 +322,7 @@ def test_the_context_check_applies_to_every_dimension() -> None:
         {
             "id": "wide",
             "dim": "instruct",
+            "task": "t",
             "lang": "ja",
             "prompt": "あ" * 4000,
             "options": {"num_ctx": 4096},

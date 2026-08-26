@@ -53,6 +53,10 @@ class Case:
     options: dict[str, Any]
     score: dict[str, Any]
     failure: dict[str, Any]
+    # **独立な観測の単位**（§17.1）。同じ問題を ja/en で 2 回聞いても観測は 1 件で、
+    # `id` の数と観測の数は一致しない。**推測させない** — `pair` と同じ理由で、
+    # ID の命名規則から切り出すと、命名が揺れた瞬間に数え方が黙って狂う
+    task: str
     # 対訳ケースの相手。S5 の ja_penalty（同一課題の日英差分）が読む。
     # ここで保持しておかないと、レポート側が ID の命名規則から推測することになる
     pair: str | None
@@ -73,6 +77,7 @@ def parse_case(raw: dict[str, Any], path: Path) -> Case:
     dim = str(_require(raw, "dim", path))
     lang = str(_require(raw, "lang", path))
     prompt = str(_require(raw, "prompt", path))
+    task = str(_require(raw, "task", path))
     score = _require(raw, "score", path)
 
     if dim not in DIMENSIONS:
@@ -87,6 +92,8 @@ def parse_case(raw: dict[str, Any], path: Path) -> Case:
         )
     if not prompt.strip():
         raise CaseError(f"{path}: prompt が空")
+    if not task.strip():
+        raise CaseError(f"{path}: task が空")
 
     options = {**DEFAULT_OPTIONS, **(raw.get("options") or {})}
     failure = raw.get("failure") or {}
@@ -98,6 +105,7 @@ def parse_case(raw: dict[str, Any], path: Path) -> Case:
         dim=dim,
         lang=lang,
         prompt=prompt,
+        task=task,
         options=options,
         score=score,
         failure=failure,

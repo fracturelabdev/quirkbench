@@ -2,6 +2,7 @@
 id: code-fix-median-en
 dim: code-fix
 lang: en
+task: median
 pair: code-fix-median-ja
 
 prompt: |

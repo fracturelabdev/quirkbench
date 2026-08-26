@@ -3,6 +3,7 @@
 id: extract-vet-ja
 dim: extract
 lang: ja
+task: vet
 pair: extract-vet-en
 
 prompt: |

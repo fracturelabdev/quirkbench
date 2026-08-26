@@ -25,6 +25,7 @@ CASE = parse_case(
     {
         "id": "c1",
         "dim": "instruct",
+        "task": "t",
         "lang": "ja",
         "prompt": "p",
         "failure": {"format": "json", "extract": "fenced_or_first_object", "min_tokens": 4},
@@ -37,7 +38,14 @@ CASE = parse_case(
 # 「未実装のものを黙って落とさず数えるか」なので、ガードの側を残す
 UNSUPPORTED_CASE = dataclasses.replace(
     parse_case(
-        {"id": "i1", "dim": "reason", "lang": "ja", "prompt": "p", "score": {"kind": "numeric"}},
+        {
+            "id": "i1",
+            "dim": "reason",
+            "task": "t",
+            "lang": "ja",
+            "prompt": "p",
+            "score": {"kind": "numeric"},
+        },
         Path("i1.yaml"),
     ),
     score={"kind": "not-implemented-yet"},
@@ -124,6 +132,7 @@ def test_check_hash_change_triggers_rescore(store: RunStore) -> None:
         {
             "id": "c1",
             "dim": "instruct",
+            "task": "t",
             "lang": "ja",
             "prompt": "p",
             "failure": {"format": "json", "extract": "fenced_or_first_object", "min_tokens": 4},
@@ -223,6 +232,7 @@ def _code_case(tmp_path):  # type: ignore[no-untyped-def]
     raw = {
         "id": "code-probe",
         "dim": "code-gen",
+        "task": "t",
         "lang": "ja",
         "prompt": "p",
         "options": {"num_predict": 512},

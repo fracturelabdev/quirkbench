@@ -1,0 +1,30 @@
+# ideate 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `coffee-shop` は命名、こちらは施策の提案。**出力の形が違う**ので、
+# 多様性の測り方が命名に固有でないことを確かめられる
+id: ideate-bookstore-ja
+dim: ideate
+lang: ja
+task: bookstore
+pair: ideate-bookstore-en
+
+prompt: |
+  駅前にある小さな書店の売上を増やす施策を 5 つ考えてください。
+  番号つきの箇条書きで、1 行に 1 案だけ書いてください。説明は不要です。
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: ja
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  count: {n: 5, pattern: numbered_list}
+  topic: 駅前にある小さな書店の売上を増やす施策
+  coverage_terms:
+    - [イベント, 催し, 朗読, サイン, 講座, 教室]
+    - [割引, ポイント, 会員, クーポン, セール, 定期]
+    - [棚, 陳列, 配置, コーナー, 選書, 特集]

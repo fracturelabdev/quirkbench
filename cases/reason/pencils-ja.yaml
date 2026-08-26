@@ -1,0 +1,26 @@
+# reason 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `change` は 6 本中 5 本が 0.00 の floor だった（§17.4）。
+# **難度は当てずっぽうで決めず、候補 4 つを実測してから選んだ** — 1 seed で 2/6。
+id: reason-pencils-ja
+dim: reason
+lang: ja
+task: pencils
+pair: reason-pencils-en
+
+prompt: |
+  次の問題に答えてください。答えの数値だけを出力してください。
+
+  鉛筆が 52 本あります。1 人に 6 本ずつ配ると、何本余りますか。
+
+options:
+  num_predict: 200
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: numeric
+  expect: 4
+  tolerance: 0

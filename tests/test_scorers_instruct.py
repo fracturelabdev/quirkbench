@@ -30,6 +30,7 @@ CASE = parse_case(
     {
         "id": "c",
         "dim": "instruct",
+        "task": "t",
         "lang": "ja",
         "prompt": "p",
         "failure": {"format": "json", "extract": "fenced_or_first_object"},
@@ -110,6 +111,7 @@ def test_partial_credit_from_expect() -> None:
         {
             "id": "d",
             "dim": "instruct",
+            "task": "t",
             "lang": "ja",
             "prompt": "p",
             "failure": {"format": "json"},
@@ -132,6 +134,7 @@ def test_no_expect_means_schema_only() -> None:
         {
             "id": "e",
             "dim": "instruct",
+            "task": "t",
             "lang": "ja",
             "prompt": "p",
             "failure": {"format": "json"},
@@ -151,6 +154,7 @@ def test_fullwidth_value_still_matches() -> None:
         {
             "id": "f",
             "dim": "instruct",
+            "task": "t",
             "lang": "ja",
             "prompt": "p",
             "failure": {"format": "json"},
@@ -171,6 +175,7 @@ def test_bool_expect_is_strict() -> None:
         {
             "id": "g",
             "dim": "instruct",
+            "task": "t",
             "lang": "ja",
             "prompt": "p",
             "failure": {"format": "json"},
@@ -213,7 +218,14 @@ def test_unimplemented_kind_raises() -> None:
     from quirkbench.scorers import ScorerNotImplemented
 
     case = parse_case(
-        {"id": "h", "dim": "reason", "lang": "ja", "prompt": "p", "score": {"kind": "numeric"}},
+        {
+            "id": "h",
+            "dim": "reason",
+            "task": "t",
+            "lang": "ja",
+            "prompt": "p",
+            "score": {"kind": "numeric"},
+        },
         Path("h.yaml"),
     )
     # `parse_case` は未知の kind を弾くので、検証を通したあとで差し替える
