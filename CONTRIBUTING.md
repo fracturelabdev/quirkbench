@@ -78,7 +78,13 @@ uv run ruff check src tests tools
 uv run ruff format --check src tests tools
 uv run mypy
 uv run python tools/mutate.py
+uv run qb lint-cases
+uv run python tools/check-readme.py
 ```
+
+**この一覧は CI と揃えてあります。** ずれていると、手元で通してから CI で落ちます。
+`tools/mutate.py --boundary`（隔離境界の変異）は macOS でしか回らないので、
+`sandbox/` に触る PR は macOS で確認してください。
 
 `tools/mutate.py` は**安全策を 1 つずつ無効化して、テストが落ちることを確かめます**。
 **全部落ちるのが正常**です。生き残りが出たら、テストを足すか、そのガードが冗長なら消してください。
