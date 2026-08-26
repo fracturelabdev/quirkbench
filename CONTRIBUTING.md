@@ -81,6 +81,7 @@ uv run python tools/mutate.py
 uv run qb lint-cases
 uv run python tools/check-readme.py
 uv run python tools/check-bytecode.py
+uv run python tools/check-workflow.py
 ```
 
 **この一覧は CI と揃えてあります。** ずれていると、手元で通してから CI で落ちます。

@@ -61,6 +61,12 @@ jobs:
       - name: ミューテーション
         run: uv run python tools/mutate.py
 
+      # **ワークフロー自身にステップの重複が無いこと。** 編集が複製すると、
+      # 古い版と新しい版が両方回り、古い版だけが落ちる。ログには古い版の
+      # 中身が出るので「直したはずのものが直っていない」に見える（実際に踏んだ）。
+      - name: ワークフローにステップの重複が無いこと
+        run: uv run python tools/check-workflow.py
+
       # ケースの粒度規約を機械で強制する。規約は書いた時点では効かない。
       - name: ケースのゲート
         run: uv run qb lint-cases
@@ -79,54 +85,6 @@ jobs:
         run: |
           git diff --exit-code -- src tools
           uv run python tools/check-bytecode.py
-
-      # ケースの粒度規約を機械で強制する。規約は書いた時点では効かない。
-      - name: ケースのゲート
-        run: uv run qb lint-cases
-
-      # **README が順位表になっていないこと。** プロファイル表を載せる以上、
-      # 見た目は順位表に近づく。散文で「順位表ではない」と書いても、
-      # **合計欄が 1 つあれば読み手はそこで並べ替える。**
-      # run データはリポジトリに入らないので、ここで回るのは欄の検査だけ。
-      - name: README の表に合計欄が無いこと
-        run: uv run python tools/check-readme.py
-
-      # **変異検査のあとにソースが元どおりか。** git だけでは足りない —
-      # バイト数の変わらない変異は `.pyc` に残り、ソースは正しいのに
-      # **実行だけが違う**状態を作る（§15.5a で実際に踏んだ）。
-      #
-      # **mtime とサイズの比較にしない。** 事故を起こした .pyc はどちらも
-      # 一致していた。だから Python がそれを有効と判断した。
-      # 実際に再コンパイルして突き合わせる。
-      - name: 変異検査がソースもバイトコードも戻していること
-        run: |
-          git diff --exit-code -- src tools
-          uv run python - <<'EOF'
-          import importlib.util, marshal, pathlib, sys
-
-          bad = []
-          for src in pathlib.Path("src").rglob("*.py"):
-              cache = pathlib.Path(importlib.util.cache_from_source(str(src)))
-              if not cache.exists():
-                  continue
-              try:
-                  cached = marshal.loads(cache.read_bytes()[16:])
-                  # **絶対パスで compile する。** import 機構は絶対パスで作るので、
-                  # 相対パスだと co_filename が違い、全ファイルが不一致に見える
-                  fresh = compile(src.read_bytes(), str(src.resolve()), "exec", dont_inherit=True)
-              except (ValueError, EOFError, SyntaxError) as exc:
-                  bad.append(f"{src}: 読めない（{exc}）")
-                  continue
-              if marshal.dumps(cached) != marshal.dumps(fresh):
-                  bad.append(f"{src}: バイトコードがソースと違う")
-
-          if bad:
-              print("pyc がソースと食い違っている:", file=sys.stderr)
-              for line in bad:
-                  print("  " + line, file=sys.stderr)
-              sys.exit(1)
-          print("pyc とソースのバイトコードは一致している")
-          EOF
 
       # レポートは ollama が要らない（生成済みの JSONL しか読まない）ので
       # ここで回せる。**表が壊れても pytest だけでは気づけない** —
