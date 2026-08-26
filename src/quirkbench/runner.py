@@ -27,6 +27,20 @@ class DigestDrift(RuntimeError):
     """run の途中でモデルの中身が入れ替わった。"""
 
 
+class ContextOverflow(RuntimeError):
+    """プロンプトが ``num_ctx`` に収まらず、**黙って切り詰められた**（§15.2）。
+
+    ollama はエラーも警告も出さない。実測では 7,821 文字を ``num_ctx`` 4096 に
+    投げると ``prompt_eval_count`` が 2,050 で止まり、モデルは
+    「文中に記述はありません」と答えた。そのまま採点すると
+    「長文脈で事実を保持できない」という結論が出るが、
+    **実際には事実を渡していない。**
+
+    `qb lint-cases` の静的見積り（§15.2）でも落とすが、
+    **見積りはトークナイザの近似**なので、実測値でも見る。
+    """
+
+
 @dataclass
 class Progress:
     total: int = 0
@@ -154,6 +168,16 @@ def run(
         except OllamaError as exc:
             response, error = {}, str(exc)
             progress.failed += 1
+
+        # **切り詰めは実測値でしか分からない。** 記録する前に見る —
+        # 記録してから気づいても、その run のデータはもう解釈できない（§15.2）
+        used = response.get("prompt_eval_count")
+        if error is None and used is not None and int(used) >= int(options["num_ctx"]):
+            raise ContextOverflow(
+                f"{case.id} / {model}: プロンプトが num_ctx={options['num_ctx']} を使い切っている"
+                f"（prompt_eval_count={used}）。**黙って切り詰められている**ので、"
+                "測っているのは長文脈保持ではなく切り詰め。ケースの num_ctx を上げること"
+            )
 
         store.append_prompt(case.prompt_hash, case.prompt)
         store.append_generation(

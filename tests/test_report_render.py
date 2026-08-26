@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from quirkbench.cases import parse_case
-from quirkbench.report import aggregate
+from quirkbench.report.aggregate import aggregate
 from quirkbench.report.render_compare import MAX_CHARS, pick_seed
 from quirkbench.report.render_compare import render as render_compare
 from quirkbench.report.render_profile import NA, UNTRUSTED_MARK
@@ -247,3 +247,36 @@ def test_empty_response_is_shown_as_empty_not_blank(tmp_path) -> None:
     store = build(tmp_path, [("a", "c", 0, 0.0)], responses={("a", "c"): "   "})
     text = render_compare(store, [case_of("c")], seed=0)
     assert "(空)" in text
+
+
+# ------------------------------ モデル名の短縮（§15.5b）
+
+
+def test_names_are_shortened_within_one_family() -> None:
+    from quirkbench.report.render_profile import short_names
+
+    assert short_names(["qwen2.5:0.5b", "qwen2.5:7b"]) == {
+        "qwen2.5:0.5b": "0.5b",
+        "qwen2.5:7b": "7b",
+    }
+
+
+def test_a_collision_disables_shortening_for_everyone() -> None:
+    """**別ファミリを足した瞬間に別モデルが同じ名前で並ぶ**（S6 で実際に起きた）。
+
+    一部だけ短縮すると、どれが短縮されているのかを読み手が判断できない。
+    """
+    from quirkbench.report.render_profile import short_names
+
+    models = ["qwen2.5:3b", "llama3.2:3b", "qwen2.5:7b"]
+    assert short_names(models) == {m: m for m in models}
+
+
+def test_the_report_never_shows_two_models_under_one_name(tmp_path) -> None:
+    store = build(
+        tmp_path,
+        [("qwen2.5:3b", "c", 0, 0.0), ("llama3.2:3b", "c", 0, 1.0)],
+    )
+    text = render_profile(aggregate(store, [case_of("c")]))
+    assert "`qwen2.5:3b`" in text
+    assert "`llama3.2:3b`" in text

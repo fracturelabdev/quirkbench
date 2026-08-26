@@ -359,7 +359,9 @@ def test_ja_penalty_needs_both_sides(tmp_path) -> None:
     ]
     dim = aggregate(store, cases).dims[0]
     assert dim.ja_pairs == 1
-    assert dim.ja_penalty_by_model["m"] == pytest.approx(-1.0)
+    # **符号は en − ja**（§4・§15.3）。ja=0.0 / en=1.0 なので penalty は +1.0。
+    # 「penalty」は正の値が罰であるべきで、逆にすると読み手が毎回符号を反転させる
+    assert dim.ja_penalty_by_model["m"] == pytest.approx(+1.0)
 
 
 def test_a_dimension_without_pairs_has_no_penalty_not_zero(tmp_path) -> None:

@@ -1,0 +1,27 @@
+# ideate 次元 — 上の ja 版の対訳。S5 の欠陥 3（対訳が無く ja_penalty が出ない）への対処
+id: ideate-coffee-shop-en
+dim: ideate
+lang: en
+pair: ideate-coffee-shop-ja
+
+prompt: |
+  Think of 5 names for a small 12-seat cafe tucked inside a residential
+  neighbourhood. Use a numbered list with one name per line. No explanations.
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: en
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  count: {n: 5, pattern: numbered_list}
+  topic: the name of a small 12-seat cafe in a residential neighbourhood
+  coverage_terms:
+    - [coffee, cafe, espresso, brew, roast]
+    - [house, home, street, corner, lane, neighbour]
+    - [little, small, quiet, window, seat, nook]

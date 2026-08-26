@@ -184,3 +184,145 @@ def test_single_item_request_is_rejected() -> None:
         failure={"count": {"n": 1, "pattern": "numbered_list"}},
     )
     assert "ideate_n_range" in _checks(case)
+
+
+# ---------------------------------- exact / numeric の規約（§15.1）
+
+ANSWER_RAW = {
+    "id": "ans",
+    "dim": "code-read",
+    "lang": "ja",
+    "prompt": "p",
+    "failure": {"format": "none"},
+    "score": {"kind": "exact", "match": "equals", "expect": "5"},
+}
+
+
+def _answer(**score):
+    from pathlib import Path
+
+    from quirkbench.cases import parse_case
+
+    raw = {**ANSWER_RAW, "score": {**ANSWER_RAW["score"], **score}}
+    for key in list(raw["score"]):
+        if raw["score"][key] is _DROP:
+            del raw["score"][key]
+    return parse_case(raw, Path("ans.yaml"))
+
+
+class _Drop:
+    pass
+
+
+_DROP = _Drop()
+
+
+def test_valid_exact_case_passes() -> None:
+    assert lint([_answer()]) == []
+
+
+def test_exact_without_expect_is_rejected() -> None:
+    assert "answer_expect" in _checks(_answer(expect=_DROP))
+
+
+def test_unknown_match_mode_is_rejected() -> None:
+    assert "exact_match_mode" in _checks(_answer(match="fuzzy"))
+
+
+def test_contains_with_a_short_answer_is_rejected() -> None:
+    """**禁止であって閾値ではない**（§15.1）。
+
+    `5` のような短い答えに `contains` を使うと、無関係な出力に偶然含まれて
+    正解になる。実測で 0.5b は ``1: 2`` を返しており、期待値が `2` なら
+    偶然一致していた。
+    """
+    assert "contains_too_short" in _checks(_answer(match="contains", expect="5"))
+
+
+def test_contains_with_a_long_answer_passes() -> None:
+    assert lint([_answer(match="contains", expect="MULBERRY-7")]) == []
+
+
+def test_contains_checks_every_element_of_a_list() -> None:
+    """1 つでも短ければ落とす。リストの後ろに短い値を隠せないようにする。"""
+    case = _answer(match="contains", expect=["MULBERRY-7", "M7"])
+    assert "contains_too_short" in _checks(case)
+
+
+def test_numeric_with_a_non_numeric_expect_is_rejected() -> None:
+    case = _answer(kind="numeric", expect="たくさん", match=_DROP)
+    assert "numeric_expect" in _checks(case)
+
+
+def test_negative_tolerance_is_rejected() -> None:
+    case = _answer(kind="numeric", expect=400, tolerance=-1, match=_DROP)
+    assert "numeric_tolerance" in _checks(case)
+
+
+# ------------------------------ プロンプトが num_ctx に収まるか（§15.2）
+
+
+def test_a_prompt_that_overflows_num_ctx_is_rejected() -> None:
+    """**収まらないとプロンプトは黙って切り詰められる**（§15.2）。
+
+    実測では 7,821 文字を num_ctx 4096 に投げると 2,050 トークンしか入らず、
+    モデルは「文中に記述はありません」と答えた。
+    """
+    from pathlib import Path
+
+    from quirkbench.cases import parse_case
+
+    case = parse_case(
+        {
+            "id": "big",
+            "dim": "longctx",
+            "lang": "ja",
+            "prompt": "あ" * 4000,
+            "options": {"num_ctx": 4096},
+            "failure": {"format": "none"},
+            "score": {"kind": "exact", "expect": "MULBERRY-7", "match": "contains"},
+        },
+        Path("big.yaml"),
+    )
+    assert "prompt_fits_context" in _checks(case)
+
+
+def test_a_prompt_with_headroom_passes() -> None:
+    from pathlib import Path
+
+    from quirkbench.cases import parse_case
+
+    case = parse_case(
+        {
+            "id": "ok",
+            "dim": "longctx",
+            "lang": "ja",
+            "prompt": "あ" * 1000,
+            "options": {"num_ctx": 4096},
+            "failure": {"format": "none"},
+            "score": {"kind": "exact", "expect": "MULBERRY-7", "match": "contains"},
+        },
+        Path("ok.yaml"),
+    )
+    assert lint([case]) == []
+
+
+def test_the_context_check_applies_to_every_dimension() -> None:
+    """**longctx だけに掛けない。** 他の次元で伸ばしたときも切り詰められる。"""
+    from pathlib import Path
+
+    from quirkbench.cases import parse_case
+
+    case = parse_case(
+        {
+            "id": "wide",
+            "dim": "instruct",
+            "lang": "ja",
+            "prompt": "あ" * 4000,
+            "options": {"num_ctx": 4096},
+            "failure": {"format": "json"},
+            "score": {"kind": "json_schema", "schema": {"type": "object"}},
+        },
+        Path("wide.yaml"),
+    )
+    assert "prompt_fits_context" in _checks(case)

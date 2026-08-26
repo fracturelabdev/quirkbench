@@ -23,8 +23,21 @@ def _header(cells: list[str]) -> list[str]:
     return [_row(cells), _row(["---"] * len(cells))]
 
 
-def _short(model: str) -> str:
-    return model.split(":", 1)[-1] if ":" in model else model
+def short_names(models: list[str]) -> dict[str, str]:
+    """表示用の短い名前。**衝突したら短縮しない**。
+
+    `qwen2.5:3b` を `3b` と書くのは 1 ファミリのときだけ通用する。
+    別ファミリを足した瞬間、`llama3.2:3b` も `3b` になり、
+    **表の中で別のモデルが同じ名前で並ぶ**（S6 で実際に起きた）。
+
+    短縮は読みやすさのためのもので、**同定を壊してよい理由にはならない。**
+    1 つでも衝突したら、全部を元の名前で出す — 一部だけ短縮すると、
+    どれが短縮されているのかを読み手が判断できない。
+    """
+    short = {m: (m.split(":", 1)[-1] if ":" in m else m) for m in models}
+    if len(set(short.values())) != len(models):
+        return {m: m for m in models}
+    return short
 
 
 def _z(dim: DimStat, model: str) -> str:
@@ -38,6 +51,7 @@ def _z(dim: DimStat, model: str) -> str:
 
 
 def render(agg: Aggregation) -> str:
+    names = short_names(agg.models)
     out: list[str] = [
         f"# プロファイル — run `{agg.run_id}`",
         "",
@@ -49,16 +63,16 @@ def render(agg: Aggregation) -> str:
         f"- 採点行が見つからなかった生成: **{agg.unscored}** 件",
         "",
     ]
-    out += _profile_table(agg)
-    out += _cases_table(agg)
-    out += _ja_penalty_table(agg)
-    out += _failure_tables(agg)
-    out += _perf_table(agg)
-    out += _within_model_table(agg)
+    out += _profile_table(agg, names)
+    out += _cases_table(agg, names)
+    out += _ja_penalty_table(agg, names)
+    out += _failure_tables(agg, names)
+    out += _perf_table(agg, names)
+    out += _within_model_table(agg, names)
     return "\n".join(out) + "\n"
 
 
-def _profile_table(agg: Aggregation) -> list[str]:
+def _profile_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
     out = [
         "## 次元プロファイル",
         "",
@@ -89,7 +103,7 @@ def _profile_table(agg: Aggregation) -> list[str]:
                         f"{dim.discriminating_cases + dim.excluded_cases}"
                         if index == 0
                         else "",
-                        f"`{_short(model)}`",
+                        f"`{names[model]}`",
                         _z(dim, model),
                         f"{dim.absolute_by_model.get(model, 0.0):.3f}",
                         f"{dim.spread_by_model.get(model, 0.0):.3f}",
@@ -107,10 +121,10 @@ def _profile_table(agg: Aggregation) -> list[str]:
     return out
 
 
-def _cases_table(agg: Aggregation) -> list[str]:
+def _cases_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
     excluded = [c for c in agg.cases if not c.discriminating]
     out = ["## ケース単位のスコア", ""]
-    out += _header(["ケース", "次元", *[f"`{_short(m)}`" for m in agg.models], "識別力"])
+    out += _header(["ケース", "次元", *[f"`{names[m]}`" for m in agg.models], "識別力"])
     for stat in agg.cases:
         out.append(
             _row(
@@ -140,14 +154,15 @@ def _cases_table(agg: Aggregation) -> list[str]:
     return out
 
 
-def _ja_penalty_table(agg: Aggregation) -> list[str]:
+def _ja_penalty_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
     out = [
         "## `ja_penalty` — 同じ課題の日英差分",
         "",
-        "**対訳ペアの両側が同じ run にあるケースだけ**が対象。負の値は「日本語で聞くと落ちる」。",
+        "**対訳ペアの両側が同じ run にあるケースだけ**が対象。"
+        "`en − ja` なので、**正の値が「日本語で聞くと落ちる」**（§4）。",
         "",
     ]
-    out += _header(["次元", "対訳ペア", *[f"`{_short(m)}`" for m in agg.models]])
+    out += _header(["次元", "対訳ペア", *[f"`{names[m]}`" for m in agg.models]])
     for dim in agg.dims:
         cells = [f"`{dim.dim}`", str(dim.ja_pairs) if dim.ja_pairs else NA]
         for model in agg.models:
@@ -163,7 +178,7 @@ def _ja_penalty_table(agg: Aggregation) -> list[str]:
     return out
 
 
-def _failure_tables(agg: Aggregation) -> list[str]:
+def _failure_tables(agg: Aggregation, names: dict[str, str]) -> list[str]:
     out: list[str] = ["## 失敗型の分布", ""]
     for tier, title, note in [
         ("hard", "固い判定", "API の応答と実行の事実だけで決まる。"),
@@ -178,7 +193,7 @@ def _failure_tables(agg: Aggregation) -> list[str]:
         if not tags:
             continue
         out += [f"### {title}", "", note, ""]
-        out += _header(["型", *[f"`{_short(m)}`" for m in agg.models]])
+        out += _header(["型", *[f"`{names[m]}`" for m in agg.models]])
         for tag in tags:
             cells = [f"`{tag}`"]
             for model in agg.models:
@@ -194,7 +209,7 @@ def _failure_tables(agg: Aggregation) -> list[str]:
     return out
 
 
-def _perf_table(agg: Aggregation) -> list[str]:
+def _perf_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
     out = [
         "## 性能",
         "",
@@ -208,7 +223,7 @@ def _perf_table(agg: Aggregation) -> list[str]:
         out.append(
             _row(
                 [
-                    f"`{_short(perf.model)}`",
+                    f"`{names[perf.model]}`",
                     f"{perf.tokens_per_second:.1f}",
                     f"{perf.prompt_tokens_per_second:.1f}",
                     f"{perf.ttft_ms_median:.1f} ms",
@@ -220,7 +235,7 @@ def _perf_table(agg: Aggregation) -> list[str]:
     return out
 
 
-def _within_model_table(agg: Aggregation) -> list[str]:
+def _within_model_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
     out = [
         "## 副指標 — モデル内の全次元平均からの偏差",
         "",
@@ -239,6 +254,6 @@ def _within_model_table(agg: Aggregation) -> list[str]:
     out += _header(["モデル", *[f"`{d}`" for d in dims]])
     for model in agg.models:
         values = agg.within_model_deviation.get(model, {})
-        out.append(_row([f"`{_short(model)}`", *[f"{values.get(d, 0.0):+.3f}" for d in dims]]))
+        out.append(_row([f"`{names[model]}`", *[f"{values.get(d, 0.0):+.3f}" for d in dims]]))
     out.append("")
     return out

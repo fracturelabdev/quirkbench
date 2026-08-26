@@ -38,6 +38,20 @@ MAX_TIMEOUT_SECONDS = 120
 #: ``max_tokens >= num_predict`` と同じ「原理的に発火しない検査」を弾く型の規約
 MIN_IDEATE_N = 2
 
+#: `contains` を許す最小の期待文字数（§15.1）。これ未満だと無関係な出力に
+#: 偶然含まれて正解になる。**閾値ではなく禁止**にするのが要点 —
+#: 選べる幅を残すと、落ちたときに `contains` に逃げる（§13.3 と同じ論法）
+MIN_CONTAINS_LENGTH = 4
+
+#: プロンプト文字数からトークン数を見積もる上限（§15.2）。
+#: 実測: 日本語 0.961 / 0.940 / 0.935 tok/char、英語 0.200 / 0.193。
+#: **日本語の最悪値の上に丸める。** 英語では 5 倍過大に見積もるが、
+#: 過小に見積もって静かに切り詰められるより、過大で落ちるほうがよい
+TOKENS_PER_CHAR = 1.0
+
+#: プロンプトが `num_ctx` に対して占めてよい割合。応答のぶんを残す
+MAX_PROMPT_RATIO = 0.75
+
 
 @dataclass(frozen=True)
 class LintIssue:
@@ -123,6 +137,71 @@ def _lint_ideate(case: Case) -> list[LintIssue]:
     return issues
 
 
+def _lint_answer(case: Case) -> list[LintIssue]:
+    """`exact` / `numeric` の規約（FLB-QB-001 §15.1）。"""
+    issues: list[LintIssue] = []
+    spec = case.score
+    kind = spec.get("kind")
+
+    if spec.get("expect") is None:
+        issues.append(LintIssue(case.id, "answer_expect", f"score.kind={kind} には expect が要る"))
+        return issues
+
+    if kind == "exact":
+        mode = str(spec.get("match", "equals"))
+        if mode not in {"equals", "contains"}:
+            issues.append(LintIssue(case.id, "exact_match_mode", f"未知の match {mode!r}"))
+        elif mode == "contains":
+            values = spec["expect"]
+            values = values if isinstance(values, list) else [values]
+            short = [str(v) for v in values if len(str(v).strip()) < MIN_CONTAINS_LENGTH]
+            if short:
+                issues.append(
+                    LintIssue(
+                        case.id,
+                        "contains_too_short",
+                        f"match=contains で期待値 {short} が {MIN_CONTAINS_LENGTH} 文字未満。"
+                        "無関係な出力に偶然含まれて正解になる",
+                    )
+                )
+    if kind == "numeric":
+        try:
+            float(spec["expect"])
+        except (TypeError, ValueError):
+            issues.append(
+                LintIssue(case.id, "numeric_expect", "score.kind=numeric の expect が数値でない")
+            )
+        if float(spec.get("tolerance", 0.0)) < 0:
+            issues.append(LintIssue(case.id, "numeric_tolerance", "tolerance が負"))
+    return issues
+
+
+def _lint_context(case: Case) -> list[LintIssue]:
+    """プロンプトが `num_ctx` に収まるか（FLB-QB-001 §15.2）。
+
+    **収まらないとプロンプトは黙って切り詰められる。** エラーも警告も出ない。
+    実測では 7,821 文字を `num_ctx` 4096 に投げると 2,050 トークンしか入らず、
+    モデルは「文中に記述はありません」と答えた。**測っているのは
+    長文脈保持ではなく切り詰め**になる。
+    """
+    num_ctx = int(case.options.get("num_ctx", 0))
+    if not num_ctx:
+        return []
+    estimated = len(case.prompt) * TOKENS_PER_CHAR
+    budget = num_ctx * MAX_PROMPT_RATIO
+    if estimated <= budget:
+        return []
+    return [
+        LintIssue(
+            case.id,
+            "prompt_fits_context",
+            f"プロンプト {len(case.prompt)} 文字（見積り {estimated:.0f} トークン）が "
+            f"num_ctx={num_ctx} の {MAX_PROMPT_RATIO:.0%}（{budget:.0f}）を超える。"
+            "収まらないとプロンプトは黙って切り詰められ、測るのは切り詰めになる",
+        )
+    ]
+
+
 def lint(cases: list[Case]) -> list[LintIssue]:
     """静的な検査だけを行う。**実行を伴う検査は入れない** —
 
@@ -135,8 +214,14 @@ def lint(cases: list[Case]) -> list[LintIssue]:
 
     for case in cases:
         spec = case.score
+        # **長さの検査は全ケースに掛ける。** longctx だけに掛けると、
+        # 他の次元でプロンプトを伸ばしたときに黙って切り詰められる
+        issues.extend(_lint_context(case))
         if spec.get("kind") == "ideate":
             issues.extend(_lint_ideate(case))
+            continue
+        if spec.get("kind") in {"exact", "numeric"}:
+            issues.extend(_lint_answer(case))
             continue
         if spec.get("kind") != "pytest":
             continue

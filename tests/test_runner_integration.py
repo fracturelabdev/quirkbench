@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from quirkbench.cases import parse_case
-from quirkbench.ollama import ModelInfo
-from quirkbench.runner import DigestDrift, run
+from quirkbench.ollama import ModelInfo, OllamaError
+from quirkbench.runner import ContextOverflow, DigestDrift, run
 from quirkbench.store import RunStore
 
 CASE = parse_case(
@@ -128,3 +128,51 @@ def test_prompt_body_is_not_duplicated_into_generations(tmp_path: Path):
     rows, _ = RunStore(tmp_path, "r").generations()
     assert "prompt" not in rows[0]
     assert rows[0]["prompt_hash"] == CASE.prompt_hash
+
+
+# ------------------------- プロンプトの切り詰め検出（FLB-QB-001 §15.2）
+
+
+class OverflowingOllama(FakeOllama):
+    """``num_ctx`` を使い切ったと報告する。**実際の ollama はこれを黙って行う。**"""
+
+    def generate(self, model, prompt, options):
+        row = super().generate(model, prompt, options)
+        row["prompt_eval_count"] = options["num_ctx"]
+        return row
+
+
+class NearLimitOllama(FakeOllama):
+    def generate(self, model, prompt, options):
+        row = super().generate(model, prompt, options)
+        row["prompt_eval_count"] = options["num_ctx"] - 1
+        return row
+
+
+def test_a_truncated_prompt_stops_the_run(tmp_path: Path):
+    """**エラーも警告も出ないので、こちらで見るしかない**（§15.2）。
+
+    実測では 7,821 文字を num_ctx 4096 に投げると prompt_eval_count が
+    2,050 で止まり、モデルは「文中に記述はありません」と答えた。
+    そのまま採点すると「長文脈で事実を保持できない」という結論が出るが、
+    実際には事実を渡していない。
+    """
+    with pytest.raises(ContextOverflow, match="切り詰められている"):
+        _run(tmp_path, OverflowingOllama(), repeats=1)
+
+
+def test_a_prompt_just_under_the_limit_is_allowed(tmp_path: Path):
+    """**境界で止めない。** 使い切っていなければ切り詰めは起きていない。"""
+    progress = _run(tmp_path, NearLimitOllama(), repeats=1)
+    assert progress.generated == 1
+
+
+def test_a_failed_generation_does_not_trigger_the_check(tmp_path: Path):
+    """生成が失敗した行には ``prompt_eval_count`` が無い。そこで落ちない。"""
+
+    class Broken(FakeOllama):
+        def generate(self, model, prompt, options):
+            raise OllamaError("届かない")
+
+    progress = _run(tmp_path, Broken(), repeats=1)
+    assert progress.failed == 1

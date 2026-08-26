@@ -192,12 +192,31 @@ def test_registry_dispatch() -> None:
     assert score(parse(GOOD, CASE.failure), CASE).score == 1.0
 
 
+def test_every_declared_kind_has_a_scorer() -> None:
+    """**`SCORE_KINDS` と registry がずれていないこと。**
+
+    S6 で 6 種すべてが実装され、`ScorerNotImplemented` は正規の経路からは
+    到達できなくなった。**ガードを消すのではなく、ずれを検査に変える** —
+    `SCORE_KINDS` に名前を足して採点器を書き忘れると、
+    そのケースは「採点されないまま数えられない」で終わる。
+    """
+    from quirkbench.cases import SCORE_KINDS
+    from quirkbench.scorers import _registry
+
+    assert set(SCORE_KINDS) == set(_registry())
+
+
 def test_unimplemented_kind_raises() -> None:
+    """ガードそのものは残す。上の検査が落ちる前の最後の網になる。"""
+    import dataclasses
+
     from quirkbench.scorers import ScorerNotImplemented
 
     case = parse_case(
         {"id": "h", "dim": "reason", "lang": "ja", "prompt": "p", "score": {"kind": "numeric"}},
         Path("h.yaml"),
     )
-    with pytest.raises(ScorerNotImplemented, match="numeric"):
-        score(parse("x", case.failure), case)
+    # `parse_case` は未知の kind を弾くので、検証を通したあとで差し替える
+    broken = dataclasses.replace(case, score={"kind": "not-implemented-yet"})
+    with pytest.raises(ScorerNotImplemented, match="not-implemented-yet"):
+        score(parse("x", broken.failure), broken)

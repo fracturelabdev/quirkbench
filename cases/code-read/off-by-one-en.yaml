@@ -1,0 +1,30 @@
+# code-read 次元 — 上の ja 版の対訳
+id: code-read-off-by-one-en
+dim: code-read
+lang: en
+pair: code-read-off-by-one-ja
+
+prompt: |
+  Exactly one line of the following code has a bug. Output only that line
+  number. Write nothing but the digit.
+
+  1: def average(values):
+  2:     total = 0
+  3:     for v in values:
+  4:         total += v
+  5:     return total / (len(values) - 1)
+  6:
+  7: print(average([1, 2, 3]))
+
+options:
+  num_predict: 64
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: exact
+  match: equals
+  expect: "5"

@@ -16,6 +16,7 @@
 出たら、**それは検証が効いていない**ということなので追随させる。
 """
 
+import importlib.util
 import pathlib
 import subprocess
 import sys
@@ -392,6 +393,92 @@ M = [
         '        rows = [r for r in rows if r.get("seed") is not None and int(r["seed"]) == seed]',
         "        rows = list(rows)",
     ),
+    # ---- S6: 残り 5 次元と、S5 が持ち越した欠陥（FLB-QB-001 §15）
+    (
+        "scorers/answer.py",
+        "numeric で最初の数値を採る（問題文の数値を書くモデルに点が入る）",
+        "    extracted = numbers[-1] if numbers else None",
+        "    extracted = numbers[0] if numbers else None",
+    ),
+    (
+        "scorers/answer.py",
+        "numeric の許容差を無視する",
+        "    hit = extracted is not None and abs(extracted - expect) <= tolerance",
+        "    hit = extracted is not None and extracted == expect",
+    ),
+    (
+        "scorers/answer.py",
+        "exact の contains を equals と同じにする（長文脈が出力の素っ気なさを測る）",
+        '    hit = contains if mode == "contains" else equals',
+        "    hit = equals",
+    ),
+    (
+        "scorers/answer.py",
+        "exact で正規化を掛けない（全角の揺れで不正解になる）",
+        '    return unicodedata.normalize("NFKC", text).strip()',
+        "    return text.strip()",
+    ),
+    (
+        "scorers/answer.py",
+        "bare_answer をスコアに入れる（reason が指示追従を測り始める）",
+        '    return ScoreResult(\n        score=1.0 if hit else 0.0,\n        sub_metrics={\n            "extracted": extracted,',
+        '    return ScoreResult(\n        score=1.0 if (hit and len(numbers) == 1) else 0.0,\n        sub_metrics={\n            "extracted": extracted,',
+    ),
+    (
+        "scorers/extract.py",
+        "json_keys で余分なキーを減点する（instruct と同じものを測り始める）",
+        "        score=len(matched) / len(expect) if expect else 1.0,",
+        "        score=(len(matched) / len(expect) if expect else 1.0)\n"
+        "        * (1.0 if len(value) == len(expect) else 0.0),",
+    ),
+    (
+        "scorers/extract.py",
+        "json_keys が値の一致を見ない（キーがあるだけで正解になる）",
+        "        if key in value and _equal(value[key], wanted):",
+        "        if key in value:",
+    ),
+    (
+        "lint.py",
+        "contains の 4 文字下限を外す（短い答えが偶然一致する）",
+        "            short = [str(v) for v in values if len(str(v).strip()) < MIN_CONTAINS_LENGTH]",
+        "            short = []",
+    ),
+    (
+        "lint.py",
+        "プロンプトが num_ctx に収まるかの検査を外す（黙って切り詰められる）",
+        "    if estimated <= budget:\n        return []",
+        "    return []",
+    ),
+    (
+        "lint.py",
+        "長さの検査を longctx だけに掛ける（他の次元で伸ばすと切り詰められる）",
+        "        issues.extend(_lint_context(case))",
+        '        if case.dim == "longctx":\n            issues.extend(_lint_context(case))',
+    ),
+    (
+        "runner.py",
+        "プロンプトの切り詰めを実行時に見逃す",
+        '        if error is None and used is not None and int(used) >= int(options["num_ctx"]):',
+        "        if False:",
+    ),
+    (
+        "report/aggregate.py",
+        "ja_penalty の符号を逆にする（penalty が負で罰になる）",
+        "                acc.setdefault(model, []).append(other.by_model[model] - value)",
+        "                acc.setdefault(model, []).append(value - other.by_model[model])",
+    ),
+    (
+        "scorers/ideate.py",
+        "被覆の照合で大文字小文字を畳まない（英語で coverage が 0 に固定される）",
+        "    return normalize(text).casefold()",
+        "    return normalize(text)",
+    ),
+    (
+        "report/render_profile.py",
+        "モデル名の短縮で衝突を見ない（別ファミリの同サイズが同じ名前で並ぶ）",
+        "    if len(set(short.values())) != len(models):\n        return {m: m for m in models}",
+        "",
+    ),
 ]
 
 BOUNDARY = [
@@ -438,6 +525,29 @@ if SENTINEL.exists():
     )
     sys.exit(2)
 
+
+def write_source(path: pathlib.Path, data: bytes) -> None:
+    """ソースを書き、**そのファイルのバイトコードキャッシュを消す**。
+
+    **これが無いと、変異が `.pyc` に残ったまま検査が続く。**
+
+    Python は `.pyc` の有効性を「ソースの mtime（**秒**）とサイズ」で判定する。
+    この道具は同じファイルを 1 秒以内に何度も書き換えるので、
+    **バイト数の変わらない変異**（`a - b` を `b - a` にする類）を書いて戻すと、
+    mtime もサイズも変異前と一致し、**変異したバイトコードが有効なまま残る**。
+
+    実際に S6 で踏んだ。`ja_penalty` の符号を直したあとに変異検査を回したところ、
+    ソースは正しいのにテストだけが失敗し続けた。`inspect.getsource` は
+    ファイルを読むので正しく見え、**実行されているのは古いバイトコード**だった。
+
+    影響は「実行後に手元が壊れる」だけではない。**検査の最中に、前の変異の
+    バイトコードで次の変異を判定しうる** — 撃墜・生き残りの判定そのものが狂う。
+    """
+    path.write_bytes(data)
+    cache = pathlib.Path(importlib.util.cache_from_source(str(path)))
+    cache.unlink(missing_ok=True)
+
+
 killed = survived = missing = 0
 for name, label, old, new in targets:
     path = ROOT / name
@@ -451,7 +561,7 @@ for name, label, old, new in targets:
     # ソースが手元に残る。検証のための道具が壊し得るのは本末転倒なので構造で塞ぐ。
     try:
         SENTINEL.write_text(f"{path}（{label}）\n")
-        path.write_bytes(text.replace(old, new, 1).encode())
+        write_source(path, text.replace(old, new, 1).encode())
         rc = subprocess.run(
             [
                 "uv",
@@ -468,7 +578,7 @@ for name, label, old, new in targets:
             text=True,
         ).returncode
     finally:
-        path.write_bytes(backup)
+        write_source(path, backup)
         assert path.read_bytes() == backup, f"{path} の復元に失敗した"
         SENTINEL.unlink(missing_ok=True)
     if rc != 0:

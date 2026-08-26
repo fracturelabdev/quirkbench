@@ -1,0 +1,31 @@
+# code-read 次元 — バグのある行を答えさせる。行番号の完全一致（FLB-QB-001 §4）
+id: code-read-off-by-one-ja
+dim: code-read
+lang: ja
+pair: code-read-off-by-one-en
+
+prompt: |
+  次のコードには 1 行だけバグがあります。その行番号だけを出力してください。
+  数字以外は書かないでください。
+
+  1: def average(values):
+  2:     total = 0
+  3:     for v in values:
+  4:         total += v
+  5:     return total / (len(values) - 1)
+  6:
+  7: print(average([1, 2, 3]))
+
+options:
+  num_predict: 64
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: exact
+  # equals にする。行番号は 1 文字なので contains は使えない（§15.1 のゲート）
+  match: equals
+  expect: "5"

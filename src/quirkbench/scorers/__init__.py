@@ -25,7 +25,9 @@ from ..cases import Case
 from ..embed import Embedder
 from ..parse import Parsed
 
-SCORER_VERSION = 2
+#: S6 で 3 → `ideate` の被覆照合が大文字小文字を畳むようになり、
+#: **既存の英語ケースの採点結果が変わる**（§15.7）
+SCORER_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -109,14 +111,19 @@ class EmbedderRequired(RuntimeError):
 
 
 def _registry() -> dict[str, Scorer]:
+    from .answer import score_exact, score_numeric
     from .code_gen import score_pytest
+    from .extract import score_json_keys
     from .ideate import score_ideate
     from .instruct import score_json_schema
 
     return {
         "json_schema": score_json_schema,
+        "json_keys": score_json_keys,
         "pytest": score_pytest,
         "ideate": score_ideate,
+        "exact": score_exact,
+        "numeric": score_numeric,
     }
 
 

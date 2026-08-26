@@ -18,8 +18,9 @@ from .gate import (
 from .keys import runner_fingerprint
 from .lint import lint
 from .ollama import DEFAULT_HOST, Ollama, OllamaError
-from .report import InconsistentRun, aggregate, render_compare, render_profile
-from .runner import DigestDrift, run
+from .report import render_compare, render_profile
+from .report.aggregate import InconsistentRun, aggregate
+from .runner import ContextOverflow, DigestDrift, run
 from .sandbox import package_sha256
 from .scoring import score_run
 from .store import RunLocked, RunStore
@@ -292,7 +293,14 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_status(args)
         if args.command == "lint-cases":
             return _cmd_lint(args)
-    except (CaseError, OllamaError, RunLocked, DigestDrift, InconsistentRun) as exc:
+    except (
+        CaseError,
+        OllamaError,
+        RunLocked,
+        DigestDrift,
+        ContextOverflow,
+        InconsistentRun,
+    ) as exc:
         print(f"エラー: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:

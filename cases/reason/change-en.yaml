@@ -1,0 +1,24 @@
+# reason 次元 — 上の ja 版の対訳
+id: reason-change-en
+dim: reason
+lang: en
+pair: reason-change-ja
+
+prompt: |
+  Answer the following question. Output only the numeric answer.
+
+  You buy 4 apples at 150 yen each and pay with a 1000 yen note.
+  How much change do you get?
+
+options:
+  num_predict: 200
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: numeric
+  expect: 400
+  tolerance: 0

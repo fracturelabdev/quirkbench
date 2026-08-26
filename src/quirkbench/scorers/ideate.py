@@ -59,6 +59,20 @@ def _morph_reject(item: str, lang: str) -> str | None:
     return None
 
 
+def _fold(text: str) -> str:
+    """被覆の照合用の正規化。**NFKC に加えて大文字小文字を畳む。**
+
+    畳まないと英語で成立しない。実測（S6）: 英語版で 6 モデル中 4 モデルの
+    ``coverage`` が **0.000** になった。原因は ``Cobblestone Cafe`` が
+    語彙の ``cafe`` に一致しないことで、**測っていたのは大文字の使い方**だった。
+
+    **`parse.normalize` 側は畳まない。** あちらは `instruct` の期待値比較にも
+    使われ、``Ichiro Tanaka`` と ``ichiro tanaka`` を同じにしてはいけない。
+    被覆は「その語に触れたか」を見るだけなので、ここだけ畳む。
+    """
+    return normalize(text).casefold()
+
+
 def _coverage(items: list[str], groups: Any) -> tuple[float, list[int]]:
     """被覆したグループ数 ÷ 全グループ数。``(率, 未被覆グループの添字)``。
 
@@ -67,12 +81,12 @@ def _coverage(items: list[str], groups: Any) -> tuple[float, list[int]]:
     """
     if not isinstance(groups, list) or not groups:
         return 0.0, []
-    haystack = normalize("\n".join(items))
+    haystack = _fold("\n".join(items))
     missed: list[int] = []
     hit = 0
     for index, group in enumerate(groups):
         words = group if isinstance(group, list) else [group]
-        if any(normalize(str(word)) in haystack for word in words):
+        if any(_fold(str(word)) in haystack for word in words):
             hit += 1
         else:
             missed.append(index)

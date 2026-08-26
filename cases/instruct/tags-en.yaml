@@ -1,0 +1,37 @@
+# instruct 次元 — 上の ja 版の対訳。S5 の欠陥 2（英語ケースが ceiling）への対処（§15.4）
+id: instruct-tags-en
+dim: instruct
+lang: en
+pair: instruct-tags-ja
+
+prompt: |
+  Classify the following headline and output the result as JSON.
+  Write nothing but the JSON.
+
+  "New desalination unit expected to cut island water bills by 30 percent"
+
+  Output exactly these three keys.
+  - category: exactly one of "technology", "economy", "politics"
+  - tags: an array of exactly three English nouns describing the article
+  - is_opinion: true for an opinion piece, false for reporting
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_schema
+  schema:
+    type: object
+    required: [category, tags, is_opinion]
+    properties:
+      category: {type: string, enum: [technology, economy, politics]}
+      tags: {type: array, minItems: 3, maxItems: 3, items: {type: string}}
+      is_opinion: {type: boolean}
+  expect:
+    is_opinion: false

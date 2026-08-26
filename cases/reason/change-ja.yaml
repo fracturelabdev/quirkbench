@@ -1,0 +1,23 @@
+# reason 次元 — 答えが一意な数値問題。最後の数値を採る（FLB-QB-001 §15.1）
+id: reason-change-ja
+dim: reason
+lang: ja
+pair: reason-change-en
+
+prompt: |
+  次の問題に答えてください。答えの数値だけを出力してください。
+
+  1 個 150 円のりんごを 4 個買って、1000 円を出しました。おつりはいくらですか。
+
+options:
+  num_predict: 200
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: numeric
+  expect: 400
+  tolerance: 0

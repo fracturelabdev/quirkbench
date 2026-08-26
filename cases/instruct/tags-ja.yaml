@@ -1,0 +1,38 @@
+# instruct 次元 — 2 対目。S5 の欠陥 1（識別力ありケースが 1 件）への対処（§15.4）
+# 制約を増やす: 配列の長さ・列挙値・真偽値
+id: instruct-tags-ja
+dim: instruct
+lang: ja
+pair: instruct-tags-en
+
+prompt: |
+  次の記事の見出しを分類し、JSON で出力してください。JSON 以外は書かないでください。
+
+  「新型の海水淡水化装置、離島の水道料金を 3 割下げる見通し」
+
+  出力するキーは次の 3 つです。
+  - category: "技術" "経済" "政治" のいずれか 1 つ
+  - tags: 記事の内容を表す日本語の名詞をちょうど 3 つ入れた配列
+  - is_opinion: 意見記事なら true、報道なら false
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_schema
+  schema:
+    type: object
+    required: [category, tags, is_opinion]
+    properties:
+      category: {type: string, enum: [技術, 経済, 政治]}
+      tags: {type: array, minItems: 3, maxItems: 3, items: {type: string}}
+      is_opinion: {type: boolean}
+  # tags の中身は問わない（正解が一意でない）。型と件数と列挙値だけを見る
+  expect:
+    is_opinion: false

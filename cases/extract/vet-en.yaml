@@ -1,0 +1,29 @@
+# extract 次元 — 上の ja 版の対訳
+id: extract-vet-en
+dim: extract
+lang: en
+pair: extract-vet-ja
+
+prompt: |
+  Extract the information from the sentence below and output it as JSON.
+  Write nothing but the JSON. The keys are name, age, city, occupation, hobby.
+
+  "Hanako Yamada, 34, is a veterinarian living in Sapporo. Her hobby is mountaineering."
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_keys
+  expect:
+    name: Hanako Yamada
+    age: 34
+    city: Sapporo
+    occupation: veterinarian
+    hobby: mountaineering

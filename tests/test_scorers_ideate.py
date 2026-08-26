@@ -291,3 +291,38 @@ def test_scorer_owns_no_failure_vocabulary() -> None:
     result = run(["街角の珈琲店", "小さな窓辺"])
     assert result.tags == ()
     assert result.applicable == ()
+
+
+def test_coverage_folds_case_for_english() -> None:
+    """**畳まないと英語で成立しない**（§15.7）。
+
+    実測: 英語版で 6 モデル中 4 モデルの coverage が 0.000 になった。
+    原因は `Cobblestone Cafe` が語彙の `cafe` に一致しないことで、
+    **測っていたのは大文字の使い方**だった。
+    """
+    raw = {
+        **RAW_CASE,
+        "lang": "en",
+        "score": {**RAW_CASE["score"], "coverage_terms": [["cafe"], ["corner"]]},
+    }
+    case = parse_case(raw, Path("en.yaml"))
+    items = [
+        "Cobblestone Cafe",
+        "The Quiet Corner",
+        "Willow Nook",
+        "Sunbeam Bistro",
+        "Morning Mocha",
+    ]
+    result = run(items, case=case)
+    assert result.sub_metrics["coverage"] == pytest.approx(1.0)
+
+
+def test_case_folding_does_not_leak_into_expect_comparison() -> None:
+    """**`parse.normalize` 側は畳まない。**
+
+    `instruct` の期待値比較に使われるので、`Ichiro Tanaka` と
+    `ichiro tanaka` を同じにしてはいけない。
+    """
+    from quirkbench.parse import normalize
+
+    assert normalize("Ichiro Tanaka") != normalize("ichiro tanaka")

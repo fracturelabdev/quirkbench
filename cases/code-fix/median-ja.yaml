@@ -1,0 +1,41 @@
+# code-fix 次元 — 壊れたコードを直させる。機構は code-gen と同一（FLB-QB-001 §15.1）
+# 新しい採点器は要らない。違うのは prompt だけで、それはケース YAML の役割
+id: code-fix-median-ja
+dim: code-fix
+lang: ja
+pair: code-fix-median-en
+
+prompt: |
+  次の関数にはバグがあります。修正した関数だけを Python で出力してください。
+  コード以外は書かないでください。
+
+  def median(values: list[float]) -> float:
+      """values の中央値を返す。要素数が偶数なら中央 2 つの平均を返す。"""
+      s = sorted(values)
+      return s[len(s) // 2]
+
+options:
+  num_predict: 512
+
+failure:
+  format: python
+  extract: fenced_or_whole
+  language: none
+  min_tokens: 20
+
+score:
+  kind: pytest
+  entry_point: median
+  timeout_seconds: 30
+  test: |
+    def check(candidate):
+        assert candidate([3, 1, 2]) == 2
+        assert candidate([4, 1, 3, 2]) == 2.5
+        assert candidate([5]) == 5
+  reference: |
+    def median(values):
+        s = sorted(values)
+        mid = len(s) // 2
+        if len(s) % 2:
+            return s[mid]
+        return (s[mid - 1] + s[mid]) / 2

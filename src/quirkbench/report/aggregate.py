@@ -304,7 +304,12 @@ def _ja_pairs(stats: list[CaseStat], by_id: dict[str, Case]) -> int:
 
 
 def _ja_penalty(stats: list[CaseStat], by_id: dict[str, Case]) -> dict[str, float]:
-    """対訳ペアの日英差分（§14.7）。**両側が同じ run にあるペアだけ。**"""
+    """対訳ペアの日英差分（§4・§14.7）。**両側が同じ run にあるペアだけ。**
+
+    **符号は `en − ja`。正の値が「日本語で落ちる」**（§4）。
+    S5 の初版は逆に書いていた（§15.3）。"penalty" は正の値が罰であるべきで、
+    `ja − en` だと読み手が毎回符号を反転させて読むことになる。
+    """
     index = {s.case_id: s for s in stats}
     acc: dict[str, list[float]] = {}
     for stat in stats:
@@ -316,7 +321,8 @@ def _ja_penalty(stats: list[CaseStat], by_id: dict[str, Case]) -> dict[str, floa
             continue
         for model, value in stat.by_model.items():
             if model in other.by_model:
-                acc.setdefault(model, []).append(value - other.by_model[model])
+                # en − ja。stat が ja 側、other が en 側
+                acc.setdefault(model, []).append(other.by_model[model] - value)
     return {m: sum(v) / len(v) for m, v in acc.items()}
 
 

@@ -1,0 +1,30 @@
+# extract 次元 — 文章 → JSON。キー単位の一致率（FLB-QB-001 §15.1）
+# schema の門を置かない。拾えたかを測る次元で、形式は instruct が測る
+id: extract-vet-ja
+dim: extract
+lang: ja
+pair: extract-vet-en
+
+prompt: |
+  次の文から情報を抽出し、JSON で出力してください。JSON 以外は書かないでください。
+  キーは name, age, city, occupation, hobby の 5 つです。
+
+  「山田花子さん（34）は札幌市在住の獣医師で、趣味は登山です。」
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_keys
+  expect:
+    name: 山田花子
+    age: 34
+    city: 札幌市
+    occupation: 獣医師
+    hobby: 登山

@@ -2,6 +2,7 @@
 id: ideate-coffee-shop-ja
 dim: ideate
 lang: ja
+pair: ideate-coffee-shop-en
 
 prompt: |
   住宅街の中にある、席数 12 の小さな喫茶店の名前を 5 つ考えてください。
