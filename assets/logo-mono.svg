@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img">
+  <title>quirkbench</title>
+  <g fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="butt">
+    <path d="M70.5 45 A20.5 20.5 0 1 1 29.5 45 A20.5 20.5 0 1 1 70.5 45" stroke-dasharray="80 4 44.81"/>
+    <path d="M70.5 24.5 V82"/>
+  </g>
+</svg>

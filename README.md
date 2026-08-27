@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="" width="72" height="72">
+
 # quirkbench
 
 **ローカル LLM の「癖」を測る。** 総合スコアで順位をつけるのではなく、
@@ -594,4 +596,11 @@ run をまたぐと**引き算の相手が別の測定条件で測られたも�
 
 ## ライセンス
 
-MIT（`LICENSE`）。
+**コードとドキュメントは MIT**（`LICENSE`）。
+
+**`assets/` のブランド資産だけが対象外**で、**All rights reserved** です（`assets/LICENSE`）。
+シンボルは quirkbench / fracturelab を指し示すための識別子なので、
+**別のものを指す標識として使われると識別子として機能しなくなります。**
+言及・リンクのための引用は、形を変えずに使う限り妨げません。
+
+原本は非公開の `organization-design/brand/` にあり、`assets/` はそのコピーです。
