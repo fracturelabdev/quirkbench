@@ -281,3 +281,56 @@ def test_the_report_never_shows_two_models_under_one_name(tmp_path) -> None:
     text = render_profile(aggregate(store, [case_of("c")]))
     assert "`qwen2.5:3b`" in text
     assert "`llama3.2:3b`" in text
+
+
+# ------------------------------------------------------------ 脱線ゲートの表
+#
+# **落とした件数を出さないと、削られたことに誰も気づけない**（§17.11）。
+
+
+def _agg_with_gate(gate):
+    """`Aggregation` を直に組む。ここは表の形だけを見るので store を通さない。"""
+    from quirkbench.report.aggregate import Aggregation, CaseStat
+
+    agg = Aggregation(run_id="r", models=["m-a", "m-b"])
+    agg.cases.append(
+        CaseStat(
+            case_id="ideate-x-ja",
+            dim="ideate",
+            lang="ja",
+            by_model={"m-a": 0.2, "m-b": 0.1},
+            sd_by_model={"m-a": 0.0, "m-b": 0.0},
+            n_by_model={"m-a": 1, "m-b": 1},
+            discriminating=True,
+            degenerate_kind=None,
+            gate_drop_by_model=gate,
+        )
+    )
+    return agg
+
+
+def _gate_row(text: str) -> str:
+    """**ゲートの節に絞ってから探す。** ケース単位の表にも同じ行頭があるので、
+    文書全体から `next()` で拾うと別の表を掴む（実際に掴んだ）。"""
+    section = text.split("## 脱線ゲートが落とした割合", 1)[1].split("\n## ", 1)[0]
+    return next(ln for ln in section.splitlines() if ln.startswith("| `ideate-x-ja`"))
+
+
+def test_the_gate_table_shows_the_drop_rate() -> None:
+    text = render_profile(_agg_with_gate({"m-a": 0.48, "m-b": 0.0}))
+    assert "## 脱線ゲートが落とした割合" in text
+    row = _gate_row(text)
+    assert "0.480" in row
+    assert "0.000" in row
+
+
+def test_a_run_without_any_gate_has_no_gate_table() -> None:
+    """**節ごと出さない。** 空の表を出すと「測ったが 0 だった」に読める。"""
+    text = render_profile(_agg_with_gate({}))
+    assert "## 脱線ゲートが落とした割合" not in text
+
+
+def test_a_model_missing_from_the_gate_is_not_written_as_zero() -> None:
+    """**0 と書かない。** 0 は「落ちなかった」で、「測っていない」とは違う。"""
+    text = render_profile(_agg_with_gate({"m-a": 0.48}))
+    assert NA in _gate_row(text)

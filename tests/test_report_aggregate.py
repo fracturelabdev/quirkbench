@@ -511,3 +511,65 @@ def test_json_round_trip_of_a_run(tmp_path) -> None:
     store = build(tmp_path, [("m", "c", 0, 0.25)])
     rows = [json.loads(line) for line in (store.dir / "scores.jsonl").read_text().splitlines()]
     assert rows[0]["score"] == 0.25
+
+
+# ------------------------------------------------------------ 脱線ゲートの寄与
+#
+# **`offtopic_rate` は S4 から書かれていたのに、読み返すものが 1 つも無かった。**
+# 「黙って落とした件数は必ず出す」を、ここだけ守れていなかった（§17.11）。
+
+
+def _with_gate(tmp_path, rows):
+    """``rows`` は ``(model, case_id, score, offtopic_rate | None)``。"""
+    store = RunStore(tmp_path, "g")
+    store.dir.mkdir(parents=True, exist_ok=True)
+    for index, (model, case_id, score, rate) in enumerate(rows):
+        store.append_generation(
+            {
+                "gen_id": f"g{index}",
+                "model": model,
+                "model_digest": f"d-{model}",
+                "ollama_version": "0.32.13",
+                "case_id": case_id,
+                "seed": 1000,
+                "eval_count": 10,
+                "eval_duration_ns": 10**8,
+                "prompt_eval_count": 5,
+                "prompt_eval_duration_ns": 10**7,
+                "load_duration_ns": 10**6,
+                "response": "x",
+            }
+        )
+        store.append_score(
+            {
+                "gen_id": f"g{index}",
+                "ts": f"2026-08-27T00:00:{index:02d}+00:00",
+                "scorer_version": 2,
+                "check_hash": "CH:" + case_id,
+                "score": score,
+                "sub_metrics": {} if rate is None else {"offtopic_rate": rate},
+                "failure_tags": [],
+                "failure_applicable": [],
+            }
+        )
+    return store
+
+
+def test_gate_drop_is_read_from_sub_metrics(tmp_path) -> None:
+    store = _with_gate(tmp_path, [("m", "c", 1.0, 0.4), ("n", "c", 0.0, 0.0)])
+    agg = aggregate(store, cases_for(["c"]))
+    stat = agg.cases[0]
+    assert stat.gate_drop_by_model == {"m": 0.4, "n": 0.0}
+
+
+def test_gate_drop_is_the_mean_over_repeats(tmp_path) -> None:
+    store = _with_gate(tmp_path, [("m", "c", 1.0, 0.2), ("m", "c", 1.0, 0.6)])
+    agg = aggregate(store, cases_for(["c"]))
+    assert agg.cases[0].gate_drop_by_model["m"] == 0.4
+
+
+def test_a_case_without_a_gate_holds_nothing(tmp_path) -> None:
+    """**0 と書かない。** 0 は「落ちなかった」で、「ゲートが無い」とは違う。"""
+    store = _with_gate(tmp_path, [("m", "c", 1.0, None), ("n", "c", 0.0, None)])
+    agg = aggregate(store, cases_for(["c"]))
+    assert agg.cases[0].gate_drop_by_model == {}
