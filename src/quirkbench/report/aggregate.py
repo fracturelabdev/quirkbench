@@ -48,6 +48,10 @@ class CaseStat:
     #: 識別力なしのとき、全モデルが満点だったか（`ceiling`）全滅だったか（`floor`）。
     #: **同じ「除外」でも次の手が違う**（§14.3）
     degenerate_kind: str | None
+    #: 脱線ゲートが落とした案の割合（`ideate` のみ・§17.11）。
+    #: **ゲートを持たない次元では空**。0 と書くと「落ちなかった」に読めるが、
+    #: 実際は「そもそもゲートが無い」で意味が違う
+    gate_drop_by_model: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -220,12 +224,20 @@ def aggregate(store: RunStore, cases: list[Case]) -> Aggregation:
 
     # --- ケース単位
     per_case: dict[str, dict[str, list[float]]] = {}
+    # **ゲートが落とした件数も集める**（§17.11）。`sub_metrics` は今まで
+    # 誰も読み返しておらず、**落とした案だけがレポートに出ていなかった** —
+    # 「黙って落とした件数は必ず出す」を、ここだけ守れていなかった
+    per_gate: dict[str, dict[str, list[float]]] = {}
     for gen_id, row in picked.items():
         gen = generations[gen_id]
         case_id = str(gen.get("case_id"))
-        per_case.setdefault(case_id, {}).setdefault(str(gen.get("model")), []).append(
+        model = str(gen.get("model"))
+        per_case.setdefault(case_id, {}).setdefault(model, []).append(
             float(row.get("score") or 0.0)
         )
+        rate = (row.get("sub_metrics") or {}).get("offtopic_rate")
+        if rate is not None:
+            per_gate.setdefault(case_id, {}).setdefault(model, []).append(float(rate))
 
     for case_id in sorted(per_case):
         case = by_id[case_id]
@@ -245,6 +257,9 @@ def aggregate(store: RunStore, cases: list[Case]) -> Aggregation:
                 n_by_model={m: len(v) for m, v in per_case[case_id].items()},
                 discriminating=discriminating,
                 degenerate_kind=None if discriminating else _degenerate_kind(values),
+                gate_drop_by_model={
+                    m: sum(v) / len(v) for m, v in per_gate.get(case_id, {}).items()
+                },
             )
         )
 

@@ -53,6 +53,42 @@ M = [
         "        if False:",
     ),
     (
+        "report/aggregate.py",
+        "ゲートが落とした割合を集めない（削られたことが誰にも見えない）",
+        '        rate = (row.get("sub_metrics") or {}).get("offtopic_rate")',
+        "        rate = None",
+    ),
+    (
+        "report/aggregate.py",
+        "ゲートを持たないケースにも 0 を入れる（測っていないのを 0 と書く）",
+        "                gate_drop_by_model={\n                    m: sum(v) / len(v) for m, v in per_gate.get(case_id, {}).items()\n                },",
+        "                gate_drop_by_model={m: 0.0 for m in by_model},",
+    ),
+    (
+        "report/render_profile.py",
+        "ゲートの表を出さない",
+        "    out += _gate_table(agg, names)\n",
+        "",
+    ),
+    (
+        "report/render_profile.py",
+        "ゲートを持たない run でも空の表を出す（測ったが 0 に読める）",
+        "    if not gated:\n        return []",
+        "    if False:\n        return []",
+    ),
+    (
+        "report/stability.py",
+        "z が 0 のモデルにも「振れる」と言う（振れていないのに）",
+        "        if not self.crosses_zero or abs(self.z_full) <= Z_ZERO_EPSILON:",
+        "        if not self.crosses_zero:",
+    ),
+    (
+        "report/stability.py",
+        "主張の大きさを振れ幅と比べない（0 付近のものまで名指しする）",
+        "        return abs(self.z_full) >= self.width / 2",
+        "        return True",
+    ),
+    (
         "report/stability.py",
         "0 判定の許容幅を外す（丸め誤差の符号で判定が変わる）",
         "        return self.z_min <= Z_ZERO_EPSILON and self.z_max >= -Z_ZERO_EPSILON",

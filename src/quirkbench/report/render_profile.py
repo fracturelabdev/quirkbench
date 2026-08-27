@@ -65,6 +65,7 @@ def render(agg: Aggregation) -> str:
     ]
     out += _profile_table(agg, names)
     out += _cases_table(agg, names)
+    out += _gate_table(agg, names)
     out += _ja_penalty_table(agg, names)
     out += _failure_tables(agg, names)
     out += _perf_table(agg, names)
@@ -151,6 +152,40 @@ def _cases_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
         out.append("")
     else:
         out += ["集計から外したケースは無い。", ""]
+    return out
+
+
+def _gate_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
+    """脱線ゲートが落とした案の割合（§17.11）。
+
+    **落とした件数を出さないと、削られたことに誰も気づけない。**
+    実際、`offtopic_rate` は S4 から `scores.jsonl` に書かれていたのに
+    読み返すものが 1 つも無く、**5 段階のあいだ誰も見ていなかった**。
+
+    **ゲートを持たない次元は行に出さない。** 0 と書くと「落ちなかった」に読めるが、
+    実際は「そもそもゲートが無い」で意味が違う。
+    """
+    gated = [c for c in agg.cases if c.gate_drop_by_model]
+    if not gated:
+        return []
+    out = [
+        "## 脱線ゲートが落とした割合",
+        "",
+        "案とお題の埋め込み類似度による足切り。**ゲートを持つケースだけ**が並ぶ。",
+        "",
+        "**この割合が課題ごとに大きく違うなら、ゲートは話題ではなく出力の形で発火している。**",
+        "短い固有名詞（店名など）は類似度が一様に低く出るので、"
+        "**閾値が分布の中腹を切る**（§17.11）。",
+        "",
+    ]
+    out += _header(["ケース", *[f"`{names[m]}`" for m in agg.models]])
+    for case in gated:
+        cells = []
+        for model in agg.models:
+            value = case.gate_drop_by_model.get(model)
+            cells.append(NA if value is None else f"{value:.3f}")
+        out.append(_row([f"`{case.case_id}`", *cells]))
+    out.append("")
     return out
 
 

@@ -283,9 +283,10 @@ def _cmd_stability(args: argparse.Namespace) -> int:
             f" / 0 をまたぐ {len(crossing)} 本"
         )
         # **z が 0 から離れているのにまたぐものだけ**を名指しする（§17.7）。
-        # 全部並べると、主張になっていないものが同じ重みで並ぶ
+        # 全部並べると、主張になっていないものが同じ重みで並ぶ。
+        # 判定は ModelStability.claim_collapsed に置いてある（ここで書くと検査できない）
         for model in sorted(crossing, key=lambda m: -abs(m.z_full)):
-            if abs(model.z_full) >= abs(model.width) / 2:
+            if model.claim_collapsed:
                 print(
                     f"    注意: {model.model} は z={model.z_full:+.2f}σ だが"
                     f" {model.z_min:+.2f} … {model.z_max:+.2f} に振れる"

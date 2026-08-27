@@ -58,6 +58,26 @@ class ModelStability:
         return self.z_max - self.z_min
 
     @property
+    def claim_collapsed(self) -> bool:
+        """**公開した主張が、観測 1 件に乗っている**か（§17.7 の読み方 2）。
+
+        「区間が 0 をまたぐ」だけでは足りない — `z` が 0 付近のモデルは
+        1 件抜けば当然どちらにも振れる。**崩れたと言えるのは、
+        `z` が 0 から離れているのに区間が 0 をまたぐとき**である。
+
+        「離れている」は**幅との相対**で見る。幅の半分より遠ければ、
+        振れ幅では説明できない位置に `z` がある。
+
+        **`z` 自体が 0 のときは主張が無いので、崩れようがない。**
+        ここを見落とすと、幅 0・`z` 0 のモデルに対して
+        「z=+0.00σ だが +0.00 … +0.00 に振れる」という、
+        **振れていないのに振れると言う文**が出る（独立レビューで指摘された）。
+        """
+        if not self.crosses_zero or abs(self.z_full) <= Z_ZERO_EPSILON:
+            return False
+        return abs(self.z_full) >= self.width / 2
+
+    @property
     def complete(self) -> bool:
         """抜いた数だけ複製が揃っているか。
 
@@ -150,7 +170,9 @@ class Stability:
     models: list[str] = field(default_factory=list)
     dims: list[DimStability] = field(default_factory=list)
     case_spreads: list[CaseSpread] = field(default_factory=list)
-    #: jackknife に掛けられなかった次元（ケースが 1 件しかない）
+    #: jackknife に掛けられなかった次元。**理由は 4 通りある**（`DimStability.why_not`）。
+    #: 未観測 / 独立した観測が 1 件 / 次元内の σ が 0 / 複製が揃わない。
+    #: **1 通りしか書かないと、他の 3 つを説明したことにならない**
     skipped: list[str] = field(default_factory=list)
 
 
@@ -199,12 +221,7 @@ def stability(store: RunStore, cases: list[Case]) -> Stability:
         missing: dict[str, int] = {}
         for dropped_task in tasks:
             subset = [c for c in cases if not (c.dim == dim and c.task == dropped_task)]
-            replicate = aggregate(store, subset)
-            got: dict[str, float] = {}
-            for stat in replicate.dims:
-                if stat.dim != dim:
-                    continue
-                got = dict(stat.z_by_model)
+            got = _replicate_z(aggregate(store, subset), dim)
             seen_models |= set(got)
             for model in seen_models:
                 if model in got:
@@ -230,6 +247,23 @@ def stability(store: RunStore, cases: list[Case]) -> Stability:
             result.skipped.append(dim)
         result.dims.append(dim_stat)
     return result
+
+
+def _replicate_z(replicate: Aggregation, dim: str) -> dict[str, float]:
+    """1 件抜きの再集計から、**`dims` の z だけ**を取り出す。
+
+    **複製の `Aggregation` は `dims` 以外どれも意味を持たない。**
+    `aggregate` は生成行を絞らず `_pick_scores` だけが対象外ケースを捨てるので、
+    複製では `unscored` が抜いたケースの生成件数だけ膨らみ（実測で 0 → 120）、
+    `failure_counts` は母数が欠け、`perf` と `total_generations` は全件のまま残る。
+
+    **型としては全部読めてしまう**ので、読める場所を関数 1 つに絞る。
+    ここを経由しない読み方が増えたら、その時点で静かに壊れる（独立レビューで指摘された）。
+    """
+    for stat in replicate.dims:
+        if stat.dim == dim:
+            return dict(stat.z_by_model)
+    return {}
 
 
 def _case_spreads(full: Aggregation, cases: list[Case]) -> list[CaseSpread]:

@@ -286,6 +286,45 @@ def test_a_replicate_that_is_numerically_zero_counts_as_crossing() -> None:
     assert clear.crosses_zero is False
 
 
+def test_a_flat_zero_model_is_not_reported_as_swinging() -> None:
+    """**振れていないのに「振れる」と言わない。**
+
+    幅 0・`z` 0 のモデルは、区間が 0 をまたぐ（全部 0 だから）が、
+    **主張が無いので崩れようがない**。ここを見落とすと
+    「z=+0.00σ だが +0.00 … +0.00 に振れる」という文が出る。
+    """
+    flat = ModelStability(model="A", z_full=0.0, replicates=(0.0, 0.0))
+    assert flat.crosses_zero is True
+    assert flat.width == 0.0
+    assert flat.claim_collapsed is False
+
+
+def test_a_claim_that_vanishes_in_every_replicate_is_reported() -> None:
+    """逆に、**`z` が離れているのに複製が全部 0 なら、主張は完全に崩れている**。"""
+    collapsed = ModelStability(model="A", z_full=1.5, replicates=(0.0, 0.0))
+    assert collapsed.width == 0.0
+    assert collapsed.claim_collapsed is True
+
+
+def test_a_claim_smaller_than_its_own_swing_is_not_reported() -> None:
+    """`z` が 0 付近なら、1 件抜けば当然どちらにも振れる（§17.7 の読み方 2）。"""
+    noise = ModelStability(model="A", z_full=0.10, replicates=(-1.0, 1.0))
+    assert noise.crosses_zero is True
+    assert noise.claim_collapsed is False
+
+
+def test_a_claim_far_from_zero_that_crosses_is_reported() -> None:
+    real = ModelStability(model="A", z_full=1.45, replicates=(-0.45, 2.19))
+    assert real.claim_collapsed is True
+
+
+def test_a_claim_that_never_crosses_is_not_reported() -> None:
+    """またがないなら、どれだけ離れていても崩れていない。"""
+    stable = ModelStability(model="A", z_full=2.0, replicates=(1.5, 2.5))
+    assert stable.crosses_zero is False
+    assert stable.claim_collapsed is False
+
+
 def test_crosses_zero_counts_touching_zero() -> None:
     """**見逃すより多めに拾う側に倒す。** 端が 0 ちょうどでも「またぐ」。"""
     touching = ModelStability(model="A", z_full=0.5, replicates=(0.0, 1.0))
