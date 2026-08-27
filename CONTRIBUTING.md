@@ -68,9 +68,14 @@ uv run qb report --run probe
 
 ### ブランド資産には触れないでください
 
-**現時点でこのリポジトリにブランド資産は含まれていません。** ただし Organization の方針として、
-ロゴ・ワードマーク・`brand/` 相当のファイルは MIT ではなく All rights reserved です。
-将来 README などに入った場合も、ロックアップの差し替えや色の変更を含む PR は受けません。
+**`assets/` がブランド資産です。** Organization の方針として、
+ロゴ・ワードマーク・`brand/` 相当のファイルは MIT ではなく **All rights reserved** で、
+リポジトリ直下の MIT の対象外です（`assets/LICENSE`）。
+
+**`assets/` に触れる PR は受けません。** 色の差し替え、比率の変更、回転、
+要素の追加や削除、ロックアップの差し替えを含みます。
+**原本は非公開の `organization-design/brand/` にあり、`assets/` はそのコピー**なので、
+ここだけ直しても原本とずれるだけです。
 
 ## 投稿にあたって
 
@@ -101,6 +106,7 @@ uv run mypy
 uv run python tools/mutate.py
 uv run qb lint-cases
 uv run python tools/check-readme.py
+uv run python tools/check-brand-license.py
 uv run python tools/check-bytecode.py
 uv run python tools/check-workflow.py
 ```

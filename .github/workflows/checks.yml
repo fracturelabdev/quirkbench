@@ -78,6 +78,11 @@ jobs:
       - name: README の表に合計欄が無いこと
         run: uv run python tools/check-readme.py
 
+      # **除外は 1 箇所に書けば効くものではない。** 読み手が最初に見る場所が
+      # 人によって違うので、4 箇所すべてに書かれていることを機械で見る
+      - name: assets が MIT の対象外だと 4 箇所に書かれていること
+        run: uv run python tools/check-brand-license.py
+
       # **変異検査のあとにソースが元どおりか。** git だけでは足りない —
       # バイト数の変わらない変異は `.pyc` に残り、ソースは正しいのに
       # **実行だけが違う**状態を作る（§15.5a で実際に踏んだ）。
