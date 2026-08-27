@@ -20,6 +20,7 @@ def case_of(score: dict, lang: str = "ja"):
         {
             "id": "c",
             "dim": "reason",
+            "task": "t",
             "lang": lang,
             "prompt": "p",
             "failure": {"format": "none"},

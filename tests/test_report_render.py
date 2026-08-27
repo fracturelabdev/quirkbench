@@ -21,6 +21,7 @@ def case_of(case_id, dim="instruct", lang="ja", pair=None, prompt="p"):
     raw = {
         "id": case_id,
         "dim": dim,
+        "task": "t",
         "lang": lang,
         "prompt": prompt,
         "failure": {"format": "json"},

@@ -1,0 +1,44 @@
+# code-gen 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `two-sum` はハッシュ表、こちらはスタック。**同じ解法で解けないものを選ぶ**
+id: code-gen-balanced-ja
+dim: code-gen
+lang: ja
+task: balanced
+pair: code-gen-balanced-en
+
+prompt: |
+  次の関数を Python で実装してください。コード以外は書かないでください。
+
+  def is_balanced(text: str) -> bool:
+      """text に含まれる (), [], {} の対応が正しければ True を返す。
+      括弧以外の文字は無視する。"""
+
+options:
+  num_predict: 512
+
+failure:
+  format: python
+  extract: fenced_or_whole
+  language: none
+  min_tokens: 20
+
+score:
+  kind: pytest
+  entry_point: is_balanced
+  timeout_seconds: 30
+  test: |
+    def check(candidate):
+        assert candidate("({[]})")
+        assert not candidate("(]")
+        assert not candidate("(()")
+  reference: |
+    def is_balanced(text):
+        pairs = {")": "(", "]": "[", "}": "{"}
+        stack = []
+        for c in text:
+            if c in "([{":
+                stack.append(c)
+            elif c in pairs:
+                if not stack or stack.pop() != pairs[c]:
+                    return False
+        return not stack

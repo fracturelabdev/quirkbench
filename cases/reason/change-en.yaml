@@ -2,6 +2,7 @@
 id: reason-change-en
 dim: reason
 lang: en
+task: change
 pair: reason-change-ja
 
 prompt: |

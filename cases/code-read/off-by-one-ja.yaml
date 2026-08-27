@@ -2,6 +2,7 @@
 id: code-read-off-by-one-ja
 dim: code-read
 lang: ja
+task: off-by-one
 pair: code-read-off-by-one-en
 
 prompt: |

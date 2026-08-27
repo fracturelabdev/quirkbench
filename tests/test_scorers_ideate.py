@@ -21,6 +21,7 @@ from quirkbench.scorers.ideate import OFFTOPIC_THRESHOLD, score_ideate
 RAW_CASE = {
     "id": "idea",
     "dim": "ideate",
+    "task": "t",
     "lang": "ja",
     "prompt": "5 つ考えてください",
     "failure": {"format": "none", "count": {"n": 5, "pattern": "numbered_list"}},

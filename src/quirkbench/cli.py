@@ -18,8 +18,9 @@ from .gate import (
 from .keys import runner_fingerprint
 from .lint import lint
 from .ollama import DEFAULT_HOST, Ollama, OllamaError
-from .report import render_compare, render_profile
+from .report import render_compare, render_profile, render_stability
 from .report.aggregate import InconsistentRun, aggregate
+from .report.stability import stability
 from .runner import ContextOverflow, DigestDrift, run
 from .sandbox import package_sha256
 from .scoring import score_run
@@ -96,6 +97,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="比較ビューに全 seed を出す（既定は最小 seed の 1 本）",
     )
+
+    stab = sub.add_parser(
+        "stability",
+        help="ケースを 1 件抜いた再集計で、z がどこまで動くかを出す（新しい生成はしない）",
+    )
+    stab.add_argument("--run", default="main")
+    stab.add_argument("--cases", type=Path, default=Path("cases"))
+    stab.add_argument("--runs", type=Path, default=Path("runs"))
+    stab.add_argument("--out", type=Path, default=Path("reports"))
 
     status = sub.add_parser("status", help="run の進捗を表示する")
     status.add_argument("--run", default="main")
@@ -248,6 +258,41 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_stability(args: argparse.Namespace) -> int:
+    """**1 つの run だけを読む**（§14.1）。`_cmd_report` と同じ理由で結合しない。"""
+    cases = load_cases(args.cases)
+    store = RunStore(args.runs, args.run)
+    if not store.dir.exists():
+        print(f"run {args.run!r} は存在しない", file=sys.stderr)
+        return 2
+
+    result = stability(store, cases)
+    out_dir = args.out / args.run
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "stability.md"
+    path.write_text(render_stability.render(result), encoding="utf-8")
+    print(f"{path}")
+
+    for dim in result.dims:
+        if not dim.measurable:
+            print(f"  {dim.dim}: 測っていない — {dim.why_not}")
+            continue
+        crossing = [m for m in dim.models if m.crosses_zero]
+        print(
+            f"  {dim.dim:<10} 観測 {dim.tasks} 件 / 最大幅 {dim.max_width:.2f}"
+            f" / 0 をまたぐ {len(crossing)} 本"
+        )
+        # **z が 0 から離れているのにまたぐものだけ**を名指しする（§17.7）。
+        # 全部並べると、主張になっていないものが同じ重みで並ぶ
+        for model in sorted(crossing, key=lambda m: -abs(m.z_full)):
+            if abs(model.z_full) >= abs(model.width) / 2:
+                print(
+                    f"    注意: {model.model} は z={model.z_full:+.2f}σ だが"
+                    f" {model.z_min:+.2f} … {model.z_max:+.2f} に振れる"
+                )
+    return 0
+
+
 def _cmd_lint(args: argparse.Namespace) -> int:
     cases = load_cases(args.cases)
     issues = lint(cases)
@@ -289,6 +334,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_score(args)
         if args.command == "report":
             return _cmd_report(args)
+        if args.command == "stability":
+            return _cmd_stability(args)
         if args.command == "status":
             return _cmd_status(args)
         if args.command == "lint-cases":

@@ -210,6 +210,7 @@ def test_positive_control(reference: str, should_fail: bool) -> None:
     raw = {
         "id": "probe",
         "dim": "code-gen",
+        "task": "t",
         "lang": "ja",
         "prompt": "p",
         "options": {"num_predict": 512},

@@ -3,6 +3,7 @@
 id: code-fix-median-ja
 dim: code-fix
 lang: ja
+task: median
 pair: code-fix-median-en
 
 prompt: |

@@ -10,6 +10,7 @@ from quirkbench.cases import DEFAULT_OPTIONS, CaseError, load_cases, parse_case
 VALID = {
     "id": "x",
     "dim": "reason",
+    "task": "t",
     "lang": "ja",
     "prompt": "p",
     "score": {"kind": "exact"},
@@ -35,7 +36,7 @@ def test_case_options_override_defaults():
 @pytest.mark.parametrize(
     "override",
     [
-        {"dim": "nope"},
+        {"dim": "nope", "task": "t"},
         {"lang": "fr"},
         {"score": {"kind": "zzz"}},
         {"prompt": "   "},
@@ -80,7 +81,7 @@ def test_empty_directory_is_rejected(tmp_path: Path):
 # 「宣言していない型は評価されない」ので、キーの typo は
 # **静かに検査されない**という最悪の壊れ方をする。ここで落とす。
 
-_BASE = {"id": "x", "dim": "instruct", "lang": "ja", "prompt": "p"}
+_BASE = {"id": "x", "dim": "instruct", "task": "t", "lang": "ja", "prompt": "p"}
 _SCHEMA = {"type": "object", "properties": {"a": {"type": "string"}}}
 
 

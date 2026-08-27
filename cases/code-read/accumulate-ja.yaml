@@ -1,0 +1,37 @@
+# code-read 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `off-by-one` は境界の 1 ずれ、こちらは累積の代入ミス（`=` と `+=`）。
+#
+# **最初に書いた `init`（`best = 0` の初期値誤り）は 60 生成すべて 0.00 の
+# floor だった**（§17.9）。行 2 と行 8 を結ばないと見えない意味的なバグで、
+# 答えが全行番号にばらけた。**行の中で見えるバグに差し替えた。**
+# 難度は候補 3 つを実測してから選んだ（1 seed で 2/6）。
+id: code-read-accumulate-ja
+dim: code-read
+lang: ja
+task: accumulate
+pair: code-read-accumulate-en
+
+prompt: |
+  次のコードには 1 行だけバグがあります。その行番号だけを出力してください。
+  数字以外は書かないでください。
+
+  1: def total_price(items):
+  2:     total = 0
+  3:     for item in items:
+  4:         total = item["price"]
+  5:     return total
+  6:
+  7: print(total_price([{"price": 100}, {"price": 250}]))
+
+options:
+  num_predict: 64
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: exact
+  match: equals
+  expect: "4"

@@ -1,0 +1,30 @@
+# ideate 次元 — 2 つ目のタスク（FLB-QB-001 §17.5）。
+# `coffee-shop` は命名、こちらは施策の提案。**出力の形が違う**ので、
+# 多様性の測り方が命名に固有でないことを確かめられる
+id: ideate-bookstore-en
+dim: ideate
+lang: en
+task: bookstore
+pair: ideate-bookstore-ja
+
+prompt: |
+  Suggest 5 ways to increase sales at a small bookstore next to a train
+  station. Write a numbered list with one idea per line. No explanations.
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: en
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  count: {n: 5, pattern: numbered_list}
+  topic: ways to increase sales at a small bookstore next to a train station
+  coverage_terms:
+    - [event, reading, signing, workshop, class, club]
+    - [discount, points, member, coupon, sale, subscription]
+    - [shelf, display, layout, corner, curation, feature]

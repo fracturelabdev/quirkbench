@@ -6,11 +6,25 @@ from quirkbench.cases import parse_case
 from quirkbench.runner import host_info, plan_work
 
 CASE_A = parse_case(
-    {"id": "a", "dim": "reason", "lang": "ja", "prompt": "p", "score": {"kind": "exact"}},
+    {
+        "id": "a",
+        "dim": "reason",
+        "task": "t",
+        "lang": "ja",
+        "prompt": "p",
+        "score": {"kind": "exact"},
+    },
     Path("a.yaml"),
 )
 CASE_B = parse_case(
-    {"id": "b", "dim": "reason", "lang": "ja", "prompt": "q", "score": {"kind": "exact"}},
+    {
+        "id": "b",
+        "dim": "reason",
+        "task": "t",
+        "lang": "ja",
+        "prompt": "q",
+        "score": {"kind": "exact"},
+    },
     Path("b.yaml"),
 )
 
