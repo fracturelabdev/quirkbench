@@ -1,19 +1,25 @@
 #!/usr/bin/env python
 """README の主張を機械で検査する。
 
-**2 つを見る。**
+**3 つを見る。**
 
 1. **合計欄が存在しないこと** — README がプロファイル表を載せる以上、
    見た目は順位表に近づく。散文で「順位表ではない」と書いても、
    **合計欄が 1 つあれば読み手はそこで並べ替える。**
    歯止めは文章ではなく、その欄が無いことに置く。**この検査は run データが無くても回る。**
-2. **数字が実データと一致すること** — README の数字は手で書き写すので、
+2. **README が挙げる出力が実装と一致すること** — 表を 1 つ足しても README は
+   黙っている。実際 S8 の `stability.md`・S9 の `gate-audit.md` と
+   **3 つの表が README に載らないまま 2 段階を通過した**。
+   **数字の照合はこれを捕まえない** — 載っていない表の数字は照合対象にならないからで、
+   **書いていないことは、間違って書くことより検出されにくい。**
+   **run データが無くても回る**ので、CI で毎回効く。
+3. **数字が実データと一致すること** — README の数字は手で書き写すので、
    **必ず 1 桁間違える。** `runs/<run>/` がある環境でだけ回る。
 
     uv run python tools/check-readme.py
 
 **run データはリポジトリに入らない**（`runs/` は gitignore）ので、
-CI で回るのは 1 だけ。2 は測定を更新したときに手元で回す。
+CI で回るのは 1 と 2 だけ。3 は測定を更新したときに手元で回す。
 
 **README 側のパースは表の形に依存する。** 表を作り直したらここも直す。
 """
@@ -54,6 +60,15 @@ def main() -> int:
         low = label.casefold()
         if any(b in low for b in banned_labels):
             problems.append(f"表に合計を示唆する欄 {label!r}: {line.strip()[:60]}")
+    checked += 1
+
+    # --- 0b) **README が挙げる出力が、実装が出すものと一致すること**
+    #
+    # **run データを要さない。** 実装のソースに書いてある見出しとファイル名を読み、
+    # README の表と**双方向で**突き合わせる。片方向にすると、
+    # README に余分な行が残っても気づけない（§19 で踏んだのと同じ型）。
+    for problem in _check_outputs(readme):
+        problems.append(problem)
     checked += 1
 
     match = RUN_MARKER.search(readme)
@@ -156,6 +171,78 @@ def main() -> int:
                 problems.append(f"{label}数がずれている: README {found.group(1)} / 実測 {want}")
 
     return _report(problems, checked)
+
+
+#: `report.md` の中の表。**ソースの見出しリテラルを実体とする。**
+#: 描画関数を呼んで見出しを集める手もあるが、`_gate_table` のように
+#: **データが無ければ出ない表**があるので、合成データの作り方しだいで
+#: 検査の網が変わってしまう。ソースなら run データに依らず一定になる。
+HEADING = re.compile(r'"## (.+?)"')
+
+#: `qb` が run ごとに書き出す Markdown。`cli.py` の書き込み先を実体とする。
+REPORT_FILE = re.compile(r'out_dir / "([\w.-]+\.md)"')
+
+
+def _normalize(text: str) -> str:
+    """見出しと README の欄名を比べるための正規化。
+
+    **記号だけを落とす。** 語まで落として緩めると、
+    別の表と取り違えたまま一致してしまう。
+    """
+    return text.replace("`", "").replace("*", "").strip()
+
+
+def _check_outputs(readme: str) -> list[str]:
+    """README の出力の一覧が、実装が出すものと**双方向で**一致するか。"""
+    problems: list[str] = []
+
+    src = (QB / "src" / "quirkbench" / "report" / "render_profile.py").read_text(encoding="utf-8")
+    headings = [_normalize(h) for h in HEADING.findall(src)]
+    if not headings:
+        return ["`render_profile.py` から表の見出しが 1 つも読めない。検査が空振りしている"]
+    listed = [_normalize(c) for c in _first_column(readme, "`report.md` に出るもの:")]
+    if not listed:
+        return ["README に「`report.md` に出るもの」の表が無い。何が出るのか辿れない"]
+
+    for heading in headings:
+        if not any(heading.startswith(cell) for cell in listed):
+            problems.append(f"`report.md` が出す表が README に無い: {heading}")
+    for cell in listed:
+        if not any(heading.startswith(cell) for heading in headings):
+            problems.append(f"README が挙げる表を `report.md` は出さない: {cell}")
+
+    cli = (QB / "src" / "quirkbench" / "cli.py").read_text(encoding="utf-8")
+    written = sorted(set(REPORT_FILE.findall(cli)))
+    if not written:
+        return [*problems, "`cli.py` から出力ファイル名が読めない。検査が空振りしている"]
+    for name in written:
+        if f"reports/<run>/{name}" not in readme:
+            problems.append(f"`qb` が書く出力が README の一覧に無い: reports/<run>/{name}")
+    for name in re.findall(r"`reports/<run>/([\w.-]+\.md)`", readme):
+        if name not in written:
+            problems.append(f"README が挙げる出力を `qb` は書かない: reports/<run>/{name}")
+    return problems
+
+
+def _first_column(readme: str, after: str) -> list[str]:
+    """`after` の直後にある表の 1 列目を返す（見出し行と区切り行は除く）。"""
+    body = readme.split(after, 1)
+    if len(body) < 2:
+        return []
+    cells: list[str] = []
+    seen_separator = False
+    for line in body[1].splitlines():
+        if not line.startswith("|"):
+            if cells:
+                break
+            continue
+        row = [c.strip() for c in line.strip().strip("|").split("|")]
+        if set("".join(row)) <= {"-", ":"}:
+            seen_separator = True
+            continue
+        if seen_separator:
+            cells.append(row[0])
+    return cells
 
 
 def _report(problems: list[str], checked: int) -> int:
