@@ -334,3 +334,40 @@ def test_a_model_missing_from_the_gate_is_not_written_as_zero() -> None:
     """**0 と書かない。** 0 は「落ちなかった」で、「測っていない」とは違う。"""
     text = render_profile(_agg_with_gate({"m-a": 0.48}))
     assert NA in _gate_row(text)
+
+
+# ------------------------------------------------- `diversity` の崖の表（§19.8）
+
+
+def _agg_with_floor(floor):
+    from quirkbench.report.aggregate import Aggregation, CaseStat
+
+    agg = Aggregation(run_id="r", models=["m-a", "m-b"])
+    agg.cases.append(
+        CaseStat(
+            case_id="ideate-x-ja",
+            dim="ideate",
+            lang="ja",
+            by_model={"m-a": 0.2, "m-b": 0.0},
+            sd_by_model={"m-a": 0.0, "m-b": 0.0},
+            n_by_model={"m-a": 1, "m-b": 1},
+            discriminating=True,
+            degenerate_kind=None,
+            floor_rate_by_model=floor,
+        )
+    )
+    return agg
+
+
+def test_崖の割合が表に出る() -> None:
+    """**黙って 0 になった生成を数えられなければ、後から寄与を切り分けられない。**"""
+    text = render_profile(_agg_with_floor({"m-a": 0.0, "m-b": 0.6}))
+    section = text.split("## `diversity` の崖に落ちた割合", 1)[1]
+    row = next(ln for ln in section.splitlines() if ln.startswith("| `ideate-x-ja`"))
+    assert "0.000" in row
+    assert "0.600" in row
+
+
+def test_崖の無い次元では表ごと出さない() -> None:
+    """**0 と書くと「落ちなかった」に読める。** ゲートの表と同じ規則。"""
+    assert "崖に落ちた割合" not in render_profile(_agg_with_floor({}))

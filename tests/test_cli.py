@@ -406,3 +406,47 @@ def test_report_on_missing_run_is_an_error(tmp_path, capsys):
     )
     assert rc == 2
     assert "存在しない" in capsys.readouterr().err
+
+
+# ------------------------------------------------------ gate-audit（§19.7）
+
+
+def test_gate_audit_on_missing_run_is_an_error(tmp_path, capsys):
+    assert (
+        cli.main(
+            [
+                "gate-audit",
+                "--run",
+                "none",
+                "--runs",
+                str(tmp_path),
+                "--cases",
+                str(tmp_path / "cases"),
+            ]
+        )
+        == 2
+    )
+
+
+def test_gate_audit_without_gated_cases_is_an_error(workspace, capsys):
+    """**ゲートを持つケースが無い run で 0 を返さない。**
+
+    返すと「測って問題なかった」と読める。
+    """
+    runs = workspace / "runs"
+    (runs / "r").mkdir(parents=True)
+    assert (
+        cli.main(
+            [
+                "gate-audit",
+                "--run",
+                "r",
+                "--runs",
+                str(runs),
+                "--cases",
+                str(workspace / "cases"),
+            ]
+        )
+        == 2
+    )
+    assert "ゲートを持つケースが無い" in capsys.readouterr().err

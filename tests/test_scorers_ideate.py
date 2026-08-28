@@ -327,3 +327,31 @@ def test_case_folding_does_not_leak_into_expect_comparison() -> None:
     from quirkbench.parse import normalize
 
     assert normalize("Ichiro Tanaka") != normalize("ichiro tanaka")
+
+
+def test_崖に落ちたことが記録に出る() -> None:
+    """**valid が 2 件未満だとスコアは比例減ではなく 0 に落ちる**（§19.8）。
+
+    §17.11.4 が「崖が効果を増幅している」と書いたのに、崖は記録されていなかった。
+    **黙って 0 になったことが読めなければ、後から寄与を切り分けられない。**
+    """
+    result = run(["街角の珈琲店"])
+    assert result.sub_metrics["diversity_floored"] is True
+
+
+def test_崖に落ちていなければ偽() -> None:
+    result = run(["街角の珈琲店", "窓辺の喫茶室"])
+    assert result.sub_metrics["diversity_floored"] is False
+
+
+def test_崖はゲートで削られた場合にも立つ() -> None:
+    """**ゲートが 1 件以下まで削ったときが本題**（§17.11.4）。
+
+    形態フィルタを通っても、埋め込みゲートで落ちれば崖に届く。
+    """
+    result = run(
+        ["街角の珈琲店", "ずれた案", "べつの案"],
+        angles={"街角の珈琲店": 0.0, "ずれた案": 1.4, "べつの案": 1.4},
+    )
+    assert result.sub_metrics["valid_count"] == 1
+    assert result.sub_metrics["diversity_floored"] is True

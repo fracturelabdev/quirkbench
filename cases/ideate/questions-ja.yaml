@@ -1,0 +1,31 @@
+# ideate 次元 — 3 つ目のタスク（FLB-QB-001 §19.9）。
+# `coffee-shop` は命名、`bookstore` は施策の提案、こちらは**質問を作る**。
+# 出力が疑問文になるので、**短い固有名詞でも動詞句でもない第 3 のレジスタ**になる。
+# 同じ型を足しても、その型の癖を厚くするだけになる
+id: ideate-questions-ja
+dim: ideate
+lang: ja
+task: questions
+pair: ideate-questions-en
+
+prompt: |
+  賃貸物件を内見するとき、不動産会社の担当者に聞いておくべき質問を 5 つ
+  考えてください。番号つきの箇条書きで、1 行に 1 問だけ書いてください。説明は不要です。
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: ja
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  count: {n: 5, pattern: numbered_list}
+  topic: 賃貸物件の内見で不動産会社の担当者に聞く質問
+  coverage_terms:
+    - [家賃, 費用, 初期費用, 敷金, 礼金, 更新]
+    - [周辺, 環境, 騒音, 治安, 買い物, 駅]
+    - [設備, 水回り, 収納, 日当たり, エアコン, 契約]

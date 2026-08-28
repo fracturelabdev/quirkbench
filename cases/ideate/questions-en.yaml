@@ -1,0 +1,28 @@
+# ideate 次元 — 3 つ目のタスクの対訳（FLB-QB-001 §19.9）
+id: ideate-questions-en
+dim: ideate
+lang: en
+task: questions
+pair: ideate-questions-ja
+
+prompt: |
+  Think of 5 questions to ask the letting agent when viewing a rental
+  apartment. Use a numbered list with one question per line. No explanations.
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: en
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  count: {n: 5, pattern: numbered_list}
+  topic: questions to ask the letting agent when viewing a rental apartment
+  coverage_terms:
+    - [rent, cost, deposit, fee, bill, utilities]
+    - [neighbour, noise, area, safety, station, shop]
+    - [appliance, storage, water, light, heating, contract]

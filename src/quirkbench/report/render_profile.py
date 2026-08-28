@@ -66,6 +66,7 @@ def render(agg: Aggregation) -> str:
     out += _profile_table(agg, names)
     out += _cases_table(agg, names)
     out += _gate_table(agg, names)
+    out += _floor_table(agg, names)
     out += _ja_penalty_table(agg, names)
     out += _failure_tables(agg, names)
     out += _perf_table(agg, names)
@@ -183,6 +184,41 @@ def _gate_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
         cells = []
         for model in agg.models:
             value = case.gate_drop_by_model.get(model)
+            cells.append(NA if value is None else f"{value:.3f}")
+        out.append(_row([f"`{case.case_id}`", *cells]))
+    out.append("")
+    return out
+
+
+def _floor_table(agg: Aggregation, names: dict[str, str]) -> list[str]:
+    """`diversity` の崖に落ちた割合（§19.8）。
+
+    **valid が 2 件未満だとスコアは比例減ではなく 0 に落ちる。**
+    §17.11.4 が「崖が効果を増幅している」と書いたのに、
+    **どの生成が崖に落ちたのかは記録されていなかった。**
+
+    ゲートの除外率と並べて読む — **崖はゲートが削った結果として起きる**ので、
+    除外率が高いケースで崖が立っていれば、そのスコアは 0 に張り付いている。
+    """
+    floored = [c for c in agg.cases if c.floor_rate_by_model]
+    if not floored:
+        return []
+    out = [
+        "## `diversity` の崖に落ちた割合",
+        "",
+        "**valid な案が 2 件未満だと、多様性は 0 になる**（§13.1）。"
+        "1 案は「k 案出せ」を満たしていないので 0 が正しいが、"
+        "**スコアは比例して下がるのではなく 0 に落ちる**（§19.8）。",
+        "",
+        "**上のゲートの除外率と並べて読む。** 除外率が高いケースで崖が立っていれば、"
+        "そのモデルのスコアは**ゲートの働きで 0 に張り付いている**。",
+        "",
+    ]
+    out += _header(["ケース", *[f"`{names[m]}`" for m in agg.models]])
+    for case in floored:
+        cells = []
+        for model in agg.models:
+            value = case.floor_rate_by_model.get(model)
             cells.append(NA if value is None else f"{value:.3f}")
         out.append(_row([f"`{case.case_id}`", *cells]))
     out.append("")
