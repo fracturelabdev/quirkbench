@@ -9,6 +9,7 @@ from pathlib import Path
 from . import __version__
 from .cases import CaseError, load_cases
 from .embed import DEFAULT_EMBED_MODEL, OllamaEmbedder
+from .embedcache import CachedEmbedder
 from .gate import (
     SandboxUnavailable,
     profile_sha256,
@@ -18,8 +19,14 @@ from .gate import (
 from .keys import runner_fingerprint
 from .lint import lint
 from .ollama import DEFAULT_HOST, Ollama, OllamaError
-from .report import render_compare, render_profile, render_stability
+from .report import (
+    render_compare,
+    render_gateaudit,
+    render_profile,
+    render_stability,
+)
 from .report.aggregate import InconsistentRun, aggregate
+from .report.gateaudit import gate_audit
 from .report.stability import stability
 from .runner import ContextOverflow, DigestDrift, run
 from .sandbox import package_sha256
@@ -106,6 +113,17 @@ def build_parser() -> argparse.ArgumentParser:
     stab.add_argument("--cases", type=Path, default=Path("cases"))
     stab.add_argument("--runs", type=Path, default=Path("runs"))
     stab.add_argument("--out", type=Path, default=Path("reports"))
+
+    audit = sub.add_parser(
+        "gate-audit",
+        help="脱線ゲートが効いているかを、別お題の案を対照にして測る（新しい生成はしない）",
+    )
+    audit.add_argument("--run", default="main")
+    audit.add_argument("--cases", type=Path, default=Path("cases"))
+    audit.add_argument("--runs", type=Path, default=Path("runs"))
+    audit.add_argument("--out", type=Path, default=Path("reports"))
+    audit.add_argument("--host", default=DEFAULT_HOST)
+    audit.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL)
 
     status = sub.add_parser("status", help="run の進捗を表示する")
     status.add_argument("--run", default="main")
@@ -303,6 +321,43 @@ def _cmd_lint(args: argparse.Namespace) -> int:
     return 1 if issues else 0
 
 
+def _cmd_gate_audit(args: argparse.Namespace) -> int:
+    """**1 つの run だけを読む**（§14.1）。`_cmd_stability` と同じ形。
+
+    **埋め込みは要る**が、`embeddings.jsonl` のキャッシュが効くので、
+    同じ run に対しては追加の計算がほとんど無い（§19.7）。
+    """
+    cases = load_cases(args.cases)
+    store = RunStore(args.runs, args.run)
+    if not store.dir.exists():
+        print(f"run {args.run!r} は存在しない", file=sys.stderr)
+        return 2
+    if not any(case.score.get("kind") == "ideate" for case in cases):
+        print("ゲートを持つケースが無い", file=sys.stderr)
+        return 2
+
+    with store:
+        embedder = CachedEmbedder(OllamaEmbedder(Ollama(args.host), args.embed_model), store)
+        result = gate_audit(store, cases, embedder)
+    out_dir = args.out / args.run
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "gate-audit.md"
+    path.write_text(render_gateaudit.render(result), encoding="utf-8")
+    print(f"{path}")
+
+    for case in result.cases:
+        if not case.measurable:
+            # 黙って落とさない。表に出ないものは「効いていた」と読まれる
+            print(f"  {case.case_id}: 測っていない — {case.why_not}")
+            continue
+        print(
+            f"  {case.case_id:<28} AUC {case.auc:.3f}"
+            f" / 対照の見逃し {case.control_leak:.1%}"
+            f" / 現行の誤除外 {case.current_reject_rate:.1%}"
+        )
+    return 0
+
+
 def _cmd_status(args: argparse.Namespace) -> int:
     store = RunStore(args.runs, args.run)
     if not store.dir.exists():
@@ -337,6 +392,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_report(args)
         if args.command == "stability":
             return _cmd_stability(args)
+        if args.command == "gate-audit":
+            return _cmd_gate_audit(args)
         if args.command == "status":
             return _cmd_status(args)
         if args.command == "lint-cases":

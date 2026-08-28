@@ -39,8 +39,13 @@ OFFTOPIC_THRESHOLD = 0.35
 MIN_ITEM_CHARS = 2
 
 
-def _morph_reject(item: str, lang: str) -> str | None:
+def morph_reject(item: str, lang: str) -> str | None:
     """形態フィルタ（第 1 段・§13.1）。落とす理由を返す。通れば ``None``。
+
+    **公開名にしてあるのは `report/gateaudit.py` が同じ実装を使うため**（§19.7）。
+    ゲートの分離能は「第 1 段を通った案」に対して測るので、
+    別実装を持つと**測る対象がずれる** — §13.2 が案の切り出しについて
+    決めたのと同じ論法。
 
     **`textstats.detect_language` を使わない。** あちらは
     ``MIN_LETTERS_FOR_LANG = 20`` の下限を持ち、店名のような短い文字列は
@@ -112,7 +117,7 @@ def score_ideate(
     morph_ok: list[str] = []
     rejected: dict[str, int] = {}
     for item in items:
-        reason = _morph_reject(item, case.lang)
+        reason = morph_reject(item, case.lang)
         if reason is None:
             morph_ok.append(item)
         else:
@@ -155,6 +160,11 @@ def score_ideate(
             "coverage": coverage,
             "coverage_missed": missed,
             "diversity": diversity,
+            # **崖に落ちたことを記録する**（§19.8）。`mean_pairwise_distance` は
+            # valid が 2 件未満で 0.0 を返すので、**スコアは比例減ではなく 0 に落ちる**。
+            # §17.11.4 が「崖が効果を増幅している」と書いたのに記録が無く、
+            # **黙って 0 になった生成を後から数えられなかった**
+            "diversity_floored": len(valid_vectors) < 2,
             # 脱線しやすさ自体が癖である（§5）。分母は形態フィルタを通った件数
             "offtopic_rate": offtopic / len(morph_ok) if morph_ok else 0.0,
             "morph_rejected": rejected,

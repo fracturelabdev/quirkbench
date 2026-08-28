@@ -55,7 +55,7 @@ M = [
     (
         "report/aggregate.py",
         "ゲートが落とした割合を集めない（削られたことが誰にも見えない）",
-        '        rate = (row.get("sub_metrics") or {}).get("offtopic_rate")',
+        '        rate = sub.get("offtopic_rate")',
         "        rate = None",
     ),
     (
@@ -621,6 +621,64 @@ M = [
         "report/render_profile.py",
         "モデル名の短縮で衝突を見ない（別ファミリの同サイズが同じ名前で並ぶ）",
         "    if len(set(short.values())) != len(models):\n        return {m: m for m in models}",
+        "",
+    ),
+]
+
+# --- S9: ゲート検査と `diversity` の崖（FLB-QB-001 §19）
+M += [
+    (
+        "report/gateaudit.py",
+        "AUC のタイを 0 で数える",
+        "            elif p == c:\n                wins += 0.5",
+        "            elif p == c:\n                wins += 0.0",
+    ),
+    (
+        "report/gateaudit.py",
+        "母数が空のとき nan ではなく無情報(0.5)を返す",
+        "    if not positives or not controls:\n        return math.nan",
+        "    if not positives or not controls:\n        return 0.5",
+    ),
+    (
+        "report/gateaudit.py",
+        "運用点の誤除外を切り上げる（目標を超えて落とす）",
+        "    drop = int(len(ordered) * false_reject)",
+        "    drop = math.ceil(len(ordered) * false_reject)",
+    ),
+    (
+        "report/gateaudit.py",
+        "閾値ちょうどの対照を見逃しに数えない（見逃しを少なく見せる）",
+        "    leaked = sum(1 for c in controls if c >= threshold)",
+        "    leaked = sum(1 for c in controls if c > threshold)",
+    ),
+    (
+        "report/gateaudit.py",
+        "対照が言語をまたぐのを許す（ゲートが実際より良く見える）",
+        "        if other.dim == case.dim and other.lang == case.lang and other.task != case.task",
+        "        if other.dim == case.dim and other.task != case.task",
+    ),
+    (
+        "report/gateaudit.py",
+        "対訳ペアを対照に含める（正例を対照として数える）",
+        "        if other.dim == case.dim and other.lang == case.lang and other.task != case.task",
+        "        if other.dim == case.dim and other.lang == case.lang",
+    ),
+    (
+        "report/gateaudit.py",
+        "測れなかったケースを黙って通す",
+        "        return self.why_not is None",
+        "        return True",
+    ),
+    (
+        "scorers/ideate.py",
+        "崖に落ちたことを記録しない",
+        '            "diversity_floored": len(valid_vectors) < 2,',
+        '            "diversity_floored": False,',
+    ),
+    (
+        "report/render_profile.py",
+        "崖の表を出さない",
+        "    out += _floor_table(agg, names)\n",
         "",
     ),
 ]

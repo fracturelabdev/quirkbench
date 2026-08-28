@@ -52,6 +52,10 @@ class CaseStat:
     #: **ゲートを持たない次元では空**。0 と書くと「落ちなかった」に読めるが、
     #: 実際は「そもそもゲートが無い」で意味が違う
     gate_drop_by_model: dict[str, float] = field(default_factory=dict)
+    #: `diversity` の崖に落ちた生成の割合（`ideate` のみ・§19.8）。
+    #: valid が 2 件未満だと **スコアは比例減ではなく 0 に落ちる**。
+    #: ゲートが削った結果として起きるので、`gate_drop_by_model` と並べて読む
+    floor_rate_by_model: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -228,6 +232,9 @@ def aggregate(store: RunStore, cases: list[Case]) -> Aggregation:
     # 誰も読み返しておらず、**落とした案だけがレポートに出ていなかった** —
     # 「黙って落とした件数は必ず出す」を、ここだけ守れていなかった
     per_gate: dict[str, dict[str, list[float]]] = {}
+    #: 崖に落ちた生成（§19.8）。**ゲートが削った結果として起きる**ので、
+    #: ゲートの除外率と並べて読めるように同じ形で集める
+    per_floor: dict[str, dict[str, list[float]]] = {}
     for gen_id, row in picked.items():
         gen = generations[gen_id]
         case_id = str(gen.get("case_id"))
@@ -235,9 +242,13 @@ def aggregate(store: RunStore, cases: list[Case]) -> Aggregation:
         per_case.setdefault(case_id, {}).setdefault(model, []).append(
             float(row.get("score") or 0.0)
         )
-        rate = (row.get("sub_metrics") or {}).get("offtopic_rate")
+        sub = row.get("sub_metrics") or {}
+        rate = sub.get("offtopic_rate")
         if rate is not None:
             per_gate.setdefault(case_id, {}).setdefault(model, []).append(float(rate))
+        floored = sub.get("diversity_floored")
+        if floored is not None:
+            per_floor.setdefault(case_id, {}).setdefault(model, []).append(float(bool(floored)))
 
     for case_id in sorted(per_case):
         case = by_id[case_id]
@@ -259,6 +270,9 @@ def aggregate(store: RunStore, cases: list[Case]) -> Aggregation:
                 degenerate_kind=None if discriminating else _degenerate_kind(values),
                 gate_drop_by_model={
                     m: sum(v) / len(v) for m, v in per_gate.get(case_id, {}).items()
+                },
+                floor_rate_by_model={
+                    m: sum(v) / len(v) for m, v in per_floor.get(case_id, {}).items()
                 },
             )
         )
