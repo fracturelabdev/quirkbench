@@ -30,6 +30,8 @@ import pathlib
 import re
 import sys
 
+from _shared import BANNED_LABELS
+
 from quirkbench.cases import load_cases
 from quirkbench.report.aggregate import aggregate
 from quirkbench.report.stability import stability
@@ -55,10 +57,11 @@ def main() -> int:
     # **散文の語で検査しない。** 「総合スコアで順位をつけるのではなく」のような、
     # まさに順位表でないことを説明している文が引っかかる。**説明文を消す方向に
     # 圧力がかかる検査は、検査として間違っている。**
-    banned_labels = ("合計", "総合", "平均", "total", "overall", "rank", "順位")
+    # **語のリストは `_shared.py` にある。** `check-site.py` が同じものを見るので、
+    # ここに直接書くと片方だけ古くなる
     for label, line in _table_labels(readme):
         low = label.casefold()
-        if any(b in low for b in banned_labels):
+        if any(b in low for b in BANNED_LABELS):
             problems.append(f"表に合計を示唆する欄 {label!r}: {line.strip()[:60]}")
     checked += 1
 
