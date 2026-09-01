@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ページが見つかりません — quirkbench</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+:root{
+  --ink:#1a1d1f;
+  --ink-soft:#4a4f54;
+  --paper:#f6f5f1;
+  --line:#dcd8ce;
+  --accent:#2f5d50;
+  --serif:"Source Serif 4",Georgia,"Hiragino Mincho ProN",serif;
+  --mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+  --gutter:clamp(1.4rem,5vw,5rem);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:clamp(.95rem,.9rem + .2vw,1.05rem);
+  line-height:1.9;text-wrap:pretty;line-break:strict;
+  min-height:100dvh;display:flex;flex-direction:column;
+}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:.22em}
+a:hover{color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.wrap{max-width:74rem;margin-inline:auto;padding-inline:var(--gutter);width:100%}
+.rule{border:0;height:1px;background:
+  linear-gradient(to right,var(--line) 0 62%,transparent 62% 65%,var(--line) 65%);margin:0}
+.masthead{padding-block:clamp(1.6rem,3vw,2.6rem)}
+.masthead a{display:flex;align-items:center;gap:.85rem;text-decoration:none;color:inherit;width:max-content}
+.masthead svg{display:block;width:34px;height:34px;color:var(--accent);flex:none}
+.masthead .name{font-family:var(--mono);font-size:1.05rem;font-weight:500;letter-spacing:-.01em}
+main{flex:1;display:flex;align-items:center;padding-block:clamp(3rem,10vw,8rem)}
+h1{
+  font-family:var(--serif);font-weight:600;
+  font-size:clamp(1.7rem,1.2rem + 2.4vw,3rem);line-height:1.3;letter-spacing:-.015em;
+  margin:0 0 1.2rem;max-width:16em;
+}
+h1 .ph,p .ph{display:inline-block}
+p{margin:0 0 1.6rem;color:var(--ink-soft);max-width:34em}
+.back{font-family:var(--mono);font-size:.85rem;letter-spacing:.02em}
+footer{padding-block:clamp(2rem,4vw,3rem);color:var(--ink-soft)}
+.foot-in{display:flex;flex-wrap:wrap;gap:.6rem 1.6rem;align-items:baseline;font-family:var(--mono);font-size:.72rem;letter-spacing:.03em}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="masthead">
+    <a href="/">
+      <svg viewBox="0 0 100 100" role="img" aria-label="quirkbench">
+        <g fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="butt">
+          <path d="M70.5 45 A20.5 20.5 0 1 1 29.5 45 A20.5 20.5 0 1 1 70.5 45" stroke-dasharray="80 4 44.81"/>
+          <path d="M70.5 24.5 V82"/>
+        </g>
+      </svg>
+      <span class="name">quirkbench</span>
+    </a>
+  </header>
+  <hr class="rule">
+</div>
+
+<main>
+  <div class="wrap">
+    <h1><span class="ph">このアドレスに</span><span class="ph">ページはありません。</span></h1>
+    <p><span class="ph">アドレスが間違っているか、</span><span class="ph">公開を取りやめた可能性があります。</span></p>
+    <p class="back"><a href="/">← quirkbench のトップへ</a></p>
+  </div>
+</main>
+
+<div class="wrap">
+  <hr class="rule">
+  <footer>
+    <div class="foot-in">
+      <span>quirkbench</span>
+      <span><a href="https://fracturelab.dev">a fracturelab tool</a></span>
+    </div>
+  </footer>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quirkbench — ローカル LLM の癖を測る</title>
+<meta name="description" content="Ollama で動くモデルの得意・不得意・失敗の型を、手元の機材で測るプロファイラ。総合スコアで順位はつけません。">
+<link rel="canonical" href="https://quirkbench.fracturelab.dev/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="quirkbench">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:title" content="quirkbench — ローカル LLM の癖を測る">
+<meta property="og:description" content="Ollama で動くモデルの得意・不得意・失敗の型を、手元の機材で測るプロファイラ。総合スコアで順位はつけません。">
+<meta property="og:url" content="https://quirkbench.fracturelab.dev/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+:root{
+  --ink:#1a1d1f;
+  --ink-soft:#4a4f54;
+  --paper:#f6f5f1;
+  --line:#dcd8ce;
+  --accent:#2f5d50;
+  --accent-soft:#e4ede9;
+  --warn:#8a4b2a;
+
+  --serif:"Source Serif 4",Georgia,"Hiragino Mincho ProN",serif;
+  --mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+
+  --text-body:clamp(.95rem,.9rem + .2vw,1.05rem);
+  --text-lead:clamp(1.1rem,1rem + .7vw,1.5rem);
+  --text-hero:clamp(2rem,1.2rem + 3.2vw,3.9rem);
+  --text-sec:clamp(1.4rem,1.15rem + 1.1vw,2rem);
+
+  --gutter:clamp(1.4rem,5vw,5rem);
+  --band:clamp(3.4rem,2.6rem + 5vw,7.5rem);
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:var(--text-body);
+  line-height:1.9;
+  text-wrap:pretty;
+  /* 既定の line-break:auto は小書き仮名（ャュョッ）の前で改行を許し、行頭に来る */
+  line-break:strict;
+}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:.22em}
+a:hover{color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+code{font-family:var(--mono);font-size:.92em}
+
+.wrap{max-width:74rem;margin-inline:auto;padding-inline:var(--gutter)}
+
+/* マークの分節を罫線に転用する。切れ目は 1 箇所だけ */
+.rule{border:0;height:1px;background:
+  linear-gradient(to right,var(--line) 0 62%,transparent 62% 65%,var(--line) 65%);
+  margin:0}
+
+/* ---------- マストヘッド ---------- */
+.masthead{padding-block:clamp(1.6rem,3vw,2.6rem);display:flex;align-items:center;gap:.85rem}
+.masthead svg{display:block;width:34px;height:34px;color:var(--accent);flex:none}
+.masthead .name{font-family:var(--mono);font-size:1.05rem;font-weight:500;letter-spacing:-.01em}
+
+/* ---------- ヒーロー ---------- */
+.hero{padding-block:clamp(2.6rem,6vw,6rem) var(--band)}
+.hero h1{
+  font-family:var(--serif);font-weight:600;
+  font-size:var(--text-hero);line-height:1.26;letter-spacing:-.015em;
+  margin:0 0 clamp(1.3rem,3vw,2rem);
+  /* ch は Latin の「0」字幅基準。日本語は 1 文字 ≒ 2ch になるので em で指定する */
+  max-width:16em;
+}
+.hero h1 .ph{display:inline-block}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.hero .lead{font-size:var(--text-lead);line-height:1.8;color:var(--ink-soft);max-width:34em;margin:0 0 1.6rem}
+.hero .not{
+  border-left:3px solid var(--accent);padding:.2rem 0 .2rem 1.1rem;
+  max-width:36em;margin:0;line-height:1.9;
+}
+
+/* ---------- 節 ---------- */
+.band{padding-block:var(--band)}
+.sec-head{display:flex;align-items:baseline;gap:1rem;margin:0 0 clamp(1.5rem,3vw,2.2rem)}
+.sec-num{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;color:var(--accent);flex:none}
+.sec-head h2{font-family:var(--serif);font-weight:600;font-size:var(--text-sec);letter-spacing:-.01em;line-height:1.35;margin:0}
+.prose{max-width:38em}
+.prose p{margin:0 0 1.1rem}
+.prose p:last-child{margin-bottom:0}
+.prose strong{font-weight:600}
+
+/* ---------- 図 ---------- */
+figure{margin:clamp(1.8rem,4vw,3rem) 0 0;padding:0}
+figure svg{display:block;width:100%;height:auto;color:var(--ink)}
+figcaption{
+  font-size:.85rem;line-height:1.85;color:var(--ink-soft);
+  margin-top:.9rem;max-width:40em;
+}
+figcaption b{color:var(--ink);font-weight:600}
+.fig-frame{background:#fff;border:1px solid var(--line);padding:clamp(1rem,2.4vw,1.8rem);overflow-x:auto}
+
+/* ---------- 次元の表 ---------- */
+.dims{width:100%;border-collapse:collapse;font-size:.92rem}
+.dims th,.dims td{text-align:left;padding:.85rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
+.dims th{
+  font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:500;border-bottom-color:var(--ink);
+}
+.dims td:first-child{font-family:var(--mono);color:var(--accent);white-space:nowrap}
+.tbl-scroll{overflow-x:auto}
+
+/* ---------- 限界のリスト ---------- */
+.limits{display:grid;gap:1.4rem;grid-template-columns:1fr;margin:0;padding:0;list-style:none}
+@media (min-width:54rem){.limits{grid-template-columns:repeat(2,minmax(0,1fr));gap:1.6rem 2.4rem}}
+.limits li{padding-top:1.1rem;border-top:2px solid var(--line)}
+.limits h3{font-family:var(--serif);font-size:1.08rem;font-weight:600;margin:0 0 .5rem;line-height:1.5}
+.limits p{margin:0;font-size:.9rem;line-height:1.85;color:var(--ink-soft)}
+
+/* ---------- 使い方 ---------- */
+pre{
+  font-family:var(--mono);font-size:.84rem;line-height:2;
+  background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);
+  padding:clamp(1rem,2.2vw,1.5rem);margin:0 0 1.2rem;overflow-x:auto;
+}
+pre .c{color:var(--ink-soft)}
+
+/* ---------- リンク ---------- */
+.links{display:grid;gap:1rem;grid-template-columns:1fr}
+@media (min-width:46rem){.links{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.card{
+  display:flex;flex-direction:column;gap:.5rem;
+  padding:clamp(1.2rem,2.4vw,1.7rem);
+  background:#fff;border:1px solid var(--line);
+  text-decoration:none;color:inherit;
+  transition:border-color .25s var(--ease),transform .25s var(--ease);
+}
+.card:hover,.card:focus-visible{border-color:var(--accent);transform:translateY(-2px)}
+.card .k{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.card .v{font-family:var(--serif);font-size:1.2rem;font-weight:600;color:var(--accent);word-break:break-word}
+.card .n{font-size:.85rem;color:var(--ink-soft);line-height:1.8}
+
+/* ---------- フッター ---------- */
+footer{padding-block:clamp(2.4rem,5vw,4rem) clamp(2rem,4vw,3rem);color:var(--ink-soft)}
+.foot-in{display:flex;flex-wrap:wrap;gap:.6rem 1.6rem;align-items:baseline;font-family:var(--mono);font-size:.72rem;letter-spacing:.03em}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <svg viewBox="0 0 100 100" role="img" aria-label="quirkbench">
+      <g fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="butt">
+        <path d="M70.5 45 A20.5 20.5 0 1 1 29.5 45 A20.5 20.5 0 1 1 70.5 45" stroke-dasharray="80 4 44.81"/>
+        <path d="M70.5 24.5 V82"/>
+      </g>
+    </svg>
+    <span class="name">quirkbench</span>
+  </header>
+
+  <hr class="rule">
+
+  <section class="hero">
+    <h1><span class="ph">ローカル LLM の</span><span class="ph"><em>癖</em>を測る。</span></h1>
+    <p class="lead">総合スコアで順位をつけるのではなく、そのモデルが<b>何を得意とし、何を苦手とし、どう失敗するか</b>の輪郭を描きます。対象は Ollama で動くモデルだけ。</p>
+    <p class="not">課金もレート制限も無いからこそ、<strong>同じ問題を seed を変えて何度も回し、ばらつきそのものを癖として測れます。</strong></p>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ 見つかったこと ============ -->
+  <section class="band">
+    <div class="sec-head"><span class="sec-num">01</span><h2>見つかったこと — 日本語で JSON を頼むと、キー名まで訳される</h2></div>
+
+    <div class="prose">
+      <p><code>name</code> / <code>age</code> / <code>occupation</code> をキーに持つ JSON を<strong>日本語で</strong>頼んだとき、<strong>6 モデル中 5 モデルがキー名を日本語に訳しました。</strong>値は正しく、<strong>訳してはいけない識別子まで訳しています。</strong></p>
+    </div>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 640 300" role="img" aria-labelledby="fig1-t fig1-d">
+          <title id="fig1-t">日本語で JSON を頼んだときにキー名を訳した生成の数</title>
+          <desc id="fig1-d">6 モデルそれぞれについて、seed 5 本のうち何本でキー名が日本語に訳されたかを示した図。qwen2.5:1.5b だけが 0 本。</desc>
+          <style>
+            .f1-lbl{font:400 12px "JetBrains Mono",monospace;fill:#4a4f54}
+            .f1-n{font:500 11px "JetBrains Mono",monospace;fill:#4a4f54}
+            .f1-note{font:400 11px -apple-system,sans-serif;fill:#4a4f54}
+            .f1-hd{font:500 10px "JetBrains Mono",monospace;fill:#4a4f54;letter-spacing:.08em}
+          </style>
+
+          <text class="f1-hd" x="0" y="14">MODEL</text>
+          <text class="f1-hd" x="285" y="14">SEED 1〜5 — 訳した生成</text>
+
+          <g transform="translate(0,30)">
+            <!-- 1 -->
+            <text class="f1-lbl" x="0" y="20">llama3.2:1b</text>
+            <g transform="translate(285,8)">
+              <rect width="22" height="16" fill="#8a4b2a"/><rect x="27" width="22" height="16" fill="#8a4b2a"/><rect x="54" width="22" height="16" fill="#8a4b2a"/><rect x="81" width="22" height="16" fill="#8a4b2a"/><rect x="108" width="22" height="16" fill="#8a4b2a"/>
+              <text class="f1-n" x="142" y="13">5 / 5</text>
+            </g>
+            <!-- 2 -->
+            <text class="f1-lbl" x="0" y="54">llama3.2:3b</text>
+            <g transform="translate(285,42)">
+              <rect width="22" height="16" fill="#8a4b2a"/><rect x="27" width="22" height="16" fill="#8a4b2a"/><rect x="54" width="22" height="16" fill="#8a4b2a"/><rect x="81" width="22" height="16" fill="#8a4b2a"/><rect x="108" width="22" height="16" fill="#8a4b2a"/>
+              <text class="f1-n" x="142" y="13">5 / 5</text>
+            </g>
+            <!-- 3 -->
+            <text class="f1-lbl" x="0" y="88">qwen2.5:0.5b</text>
+            <g transform="translate(285,76)">
+              <rect width="22" height="16" fill="#8a4b2a"/><rect x="27" width="22" height="16" fill="#8a4b2a"/><rect x="54" width="22" height="16" fill="#8a4b2a"/><rect x="81" width="22" height="16" fill="#8a4b2a"/><rect x="108" width="22" height="16" fill="none" stroke="#dcd8ce"/>
+              <text class="f1-n" x="142" y="13">4 / 5</text>
+            </g>
+            <!-- 4 -->
+            <text class="f1-lbl" x="0" y="122">qwen2.5:1.5b</text>
+            <g transform="translate(285,110)">
+              <rect width="22" height="16" fill="none" stroke="#dcd8ce"/><rect x="27" width="22" height="16" fill="none" stroke="#dcd8ce"/><rect x="54" width="22" height="16" fill="none" stroke="#dcd8ce"/><rect x="81" width="22" height="16" fill="none" stroke="#dcd8ce"/><rect x="108" width="22" height="16" fill="none" stroke="#dcd8ce"/>
+              <text class="f1-n" x="142" y="13" fill="#2f5d50">0 / 5</text>
+            </g>
+            <!-- 5 -->
+            <text class="f1-lbl" x="0" y="156">qwen2.5:3b</text>
+            <g transform="translate(285,144)">
+              <rect width="22" height="16" fill="#8a4b2a"/><rect x="27" width="22" height="16" fill="none" stroke="#dcd8ce"/><rect x="54" width="22" height="16" fill="none" stroke="#dcd8ce"/><rect x="81" width="22" height="16" fill="none" stroke="#dcd8ce"/><rect x="108" width="22" height="16" fill="none" stroke="#dcd8ce"/>
+              <text class="f1-n" x="142" y="13">1 / 5</text>
+            </g>
+            <!-- 6 -->
+            <text class="f1-lbl" x="0" y="190">qwen2.5:7b</text>
+            <g transform="translate(285,178)">
+              <rect width="22" height="16" fill="#8a4b2a"/><rect x="27" width="22" height="16" fill="#8a4b2a"/><rect x="54" width="22" height="16" fill="#8a4b2a"/><rect x="81" width="22" height="16" fill="#8a4b2a"/><rect x="108" width="22" height="16" fill="#8a4b2a"/>
+              <text class="f1-n" x="142" y="13">5 / 5</text>
+            </g>
+          </g>
+
+          <line x1="0" y1="245" x2="640" y2="245" stroke="#dcd8ce"/>
+          <text class="f1-note" x="0" y="266">これは 1 ケースの内訳です。次元をまたいだ合計ではなく、モデルの優劣でもありません。</text>
+          <text class="f1-note" x="0" y="284">同じモデルでも、別の日本語 × 形式制約のケースでは勝敗が入れ替わります。</text>
+        </svg>
+      </div>
+      <figcaption><b>訳さないのは <code>qwen2.5:1.5b</code> だけ。</b>いちばん大きい <code>qwen2.5:7b</code> は 5 本すべてで訳しました。</figcaption>
+    </figure>
+
+    <div class="prose" style="margin-top:2rem">
+      <p><strong>これは「日本語が苦手」ではありません。</strong><code>qwen2.5:7b</code> を例に取ると、<strong>同じ課題の英語版は 5 本すべて正解</strong>で、コード生成の日英差はありませんでした。壊れているのは日本語そのものではなく、<strong>日本語 × 形式制約</strong>の組み合わせです。</p>
+      <p>そして<strong>量子化を替えても動きませんでした。</strong><code>llama3.2:1b</code> を <code>Q8_0</code> から <code>Q4_K_M</code> に差し替えて測り直しても、6 モデルの内訳は同じままでした。</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ 測らないもの ============ -->
+  <section class="band">
+    <div class="sec-head"><span class="sec-num">02</span><h2>測らないもの</h2></div>
+    <div class="prose">
+      <p><strong>先に書きます。ここを誤解したまま数字を読まれるのが一番まずいからです。</strong></p>
+    </div>
+    <ul class="limits" style="margin-top:1.6rem">
+      <li>
+        <h3>「発想の質」は測っていない</h3>
+        <p><code>ideate</code> 次元が出すのは<b>制約内多様性</b>です。指定件数を守ったか、お題から外れていないか、案同士がどれだけ重複していないか。良いアイデアかどうかは測れません。生の出力を全件保存してあるので、質の判断は人が読んで行います。</p>
+      </li>
+      <li>
+        <h3>LLM に採点させない</h3>
+        <p>手元で動く最大級のモデルでも、被験モデルと同程度かそれ以下の能力しかありません。同じモデルファミリなら誤差が相関し、自分に似た出力を高く評価します。</p>
+      </li>
+      <li>
+        <h3>他人の環境の再現ではない</h3>
+        <p>量子化・<code>num_ctx</code>・マシンの負荷で数字は動きます。出るのは<b>あなたの手元での</b>プロファイルであって、モデルの絶対的な性能ではありません。</p>
+      </li>
+      <li>
+        <h3>順位表を出さない</h3>
+        <p>スコアは「ケースごとに全モデルの平均を引いた残差」で出します。次元をまたいで足せる量ではないので、合計欄も総合順位もありません。</p>
+      </li>
+    </ul>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ 測る次元 ============ -->
+  <section class="band">
+    <div class="sec-head"><span class="sec-num">03</span><h2>測る次元</h2></div>
+    <div class="tbl-scroll">
+      <table class="dims">
+        <thead><tr><th>次元</th><th>問い方</th><th>採点</th></tr></thead>
+        <tbody>
+          <tr><td>instruct</td><td>形式制約つきの依頼（schema・列挙値・件数）</td><td>schema 検証 × 期待値の一致</td></tr>
+          <tr><td>code-gen</td><td>関数を書かせる</td><td>サンドボックスで実行する</td></tr>
+          <tr><td>code-fix</td><td>壊れた関数を直させる</td><td>サンドボックスで実行する</td></tr>
+          <tr><td>code-read</td><td>バグのある行番号を答えさせる</td><td>正規化してから完全一致</td></tr>
+          <tr><td>extract</td><td>文章から JSON を作らせる</td><td>キー単位の一致（構造の門は置かない）</td></tr>
+          <tr><td>reason</td><td>答えが一意な数値問題</td><td>最後の数値を採り、許容差で比較</td></tr>
+          <tr><td>longctx</td><td>長文に事実を埋めて問う（針の位置は 3 通り）</td><td>答えを含むか</td></tr>
+          <tr><td>ideate</td><td>k 個の案を出させる</td><td>制約内多様性（上記）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose" style="margin-top:1.6rem">
+      <p><code>reason</code> が「最後の数値」を採るのは、素の数値だけを正解にすると<strong>測るのが算数ではなく指示追従になる</strong>からです。指示追従は <code>instruct</code> が測る次元なので、両方に入れると同じものを二重に数えてしまいます。</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ どう測るか ============ -->
+  <section class="band">
+    <div class="sec-head"><span class="sec-num">04</span><h2>どう測るか — 生成と採点を分ける</h2></div>
+    <div class="prose">
+      <p>全次元を複数モデルで回すと数時間かかります。そのため<strong>生成・採点・集計を別のコマンドに分け、採点は生成を書き換えません。</strong></p>
+    </div>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 640 230" role="img" aria-labelledby="fig2-t fig2-d">
+          <title id="fig2-t">生成・採点・集計の 3 段構成</title>
+          <desc id="fig2-d">qb run が生成を書き、qb score が採点を追記し、qb report が集計する。採点は生成を書き換えない。</desc>
+          <style>
+            .f2-cmd{font:500 13px "JetBrains Mono",monospace;fill:#2f5d50}
+            .f2-file{font:400 11px "JetBrains Mono",monospace;fill:#4a4f54}
+            .f2-role{font:400 11px -apple-system,sans-serif;fill:#4a4f54}
+            .f2-note{font:400 11px -apple-system,sans-serif;fill:#4a4f54}
+          </style>
+
+          <!-- run -->
+          <rect x="0" y="20" width="180" height="66" fill="none" stroke="#2f5d50" stroke-width="2"/>
+          <text class="f2-cmd" x="16" y="46">qb run</text>
+          <text class="f2-role" x="16" y="68">モデルを回して出力を書く</text>
+
+          <!-- arrow -->
+          <path d="M188 53 H228" fill="none" stroke="#4a4f54" stroke-width="1.5"/>
+          <path d="M228 53 l-7 -4 v8 z" fill="#4a4f54"/>
+
+          <!-- store -->
+          <rect x="236" y="20" width="168" height="66" fill="#e4ede9" stroke="#2f5d50" stroke-width="1"/>
+          <text class="f2-file" x="252" y="46">runs/&lt;run&gt;/</text>
+          <text class="f2-file" x="252" y="64">responses.jsonl</text>
+
+          <!-- arrow to score -->
+          <path d="M412 53 H452" fill="none" stroke="#4a4f54" stroke-width="1.5"/>
+          <path d="M452 53 l-7 -4 v8 z" fill="#4a4f54"/>
+
+          <!-- score -->
+          <rect x="460" y="20" width="180" height="66" fill="none" stroke="#2f5d50" stroke-width="2"/>
+          <text class="f2-cmd" x="476" y="46">qb score</text>
+          <text class="f2-role" x="476" y="68">採点を追記する</text>
+
+          <!-- read-only marker -->
+          <path d="M320 94 V124" fill="none" stroke="#dcd8ce" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <text class="f2-note" x="336" y="118">生成は書き換えない — 期待値を直したら採点だけ回し直せる</text>
+
+          <!-- report -->
+          <path d="M550 94 V132" fill="none" stroke="#4a4f54" stroke-width="1.5"/>
+          <path d="M550 132 l-4 -7 h8 z" fill="#4a4f54"/>
+          <rect x="460" y="140" width="180" height="66" fill="none" stroke="#2f5d50" stroke-width="2"/>
+          <text class="f2-cmd" x="476" y="166">qb report</text>
+          <text class="f2-role" x="476" y="188">輪郭を出す</text>
+
+          <!-- resume -->
+          <!-- L 字なので fill を切る。path の既定は fill:black で、閉じると面が黒く塗られる -->
+          <path d="M90 94 V170 H236" fill="none" stroke="#4a4f54" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <path d="M236 170 l-7 -4 v8 z" fill="#4a4f54"/>
+          <text class="f2-note" x="0" y="205">Ctrl-C で止めても、同じ run 名で再実行すれば続きから再開します</text>
+        </svg>
+      </div>
+      <figcaption>期待値や schema を直したら <code>qb score</code> をもう一度回すだけで済み、<b>数時間かけた生成はそのまま残ります。</b></figcaption>
+    </figure>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ 分かっている限界 ============ -->
+  <section class="band">
+    <div class="sec-head"><span class="sec-num">05</span><h2>分かっている限界</h2></div>
+    <div class="prose">
+      <p>設計上の限界を先に書きます。<strong>直っていないものも、測って出しています。</strong></p>
+    </div>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 640 210" role="img" aria-labelledby="fig3-t fig3-d">
+          <title id="fig3-t">脱線ゲートの順序が逆転している</title>
+          <desc id="fig3-d">お題との埋め込み類似度で足切りしているが、屑の案がまともな店名より高い値を取っており、閾値をどこに置いても分離できない。</desc>
+          <style>
+            .f3-v{font:500 11px "JetBrains Mono",monospace;fill:#4a4f54}
+            .f3-i{font:400 12px -apple-system,sans-serif;fill:#1a1d1f}
+            .f3-note{font:400 11px -apple-system,sans-serif;fill:#4a4f54}
+            .f3-ax{font:400 10px "JetBrains Mono",monospace;fill:#4a4f54}
+          </style>
+
+          <text class="f3-note" x="0" y="14">案とお題の埋め込み類似度 — 高いほど「お題に沿っている」と判定される</text>
+
+          <!-- axis -->
+          <line x1="60" y1="150" x2="600" y2="150" stroke="#4a4f54" stroke-width="1"/>
+          <text class="f3-ax" x="60" y="168">0.26</text>
+          <text class="f3-ax" x="560" y="168">0.36</text>
+
+          <!-- threshold -->
+          <line x1="546" y1="46" x2="546" y2="150" stroke="#2f5d50" stroke-width="1.5" stroke-dasharray="5 3"/>
+          <text class="f3-v" x="546" y="38" fill="#2f5d50" text-anchor="middle">閾値 0.35</text>
+
+          <!-- グラウンズ 0.2782 -->
+          <circle cx="103" cy="150" r="5" fill="none" stroke="#2f5d50" stroke-width="2"/>
+          <line x1="103" y1="145" x2="103" y2="112" stroke="#dcd8ce"/>
+          <text class="f3-i" x="103" y="104" text-anchor="middle">グラウンズ</text>
+          <text class="f3-v" x="103" y="88" text-anchor="middle">0.2782</text>
+
+          <!-- すずらん亭 0.3196 -->
+          <circle cx="327" cy="150" r="5" fill="none" stroke="#2f5d50" stroke-width="2"/>
+          <line x1="327" y1="145" x2="327" y2="112" stroke="#dcd8ce"/>
+          <text class="f3-i" x="327" y="104" text-anchor="middle">すずらん亭</text>
+          <text class="f3-v" x="327" y="88" text-anchor="middle">0.3196</text>
+
+          <!-- 8番 0.3234 -->
+          <circle cx="348" cy="150" r="5" fill="#8a4b2a"/>
+          <!-- 引き出し線は斜めに。垂直にするとラベルがどの点のものか読めない -->
+          <path d="M348 143 L396 80 H426" fill="none" stroke="#8a4b2a" stroke-dasharray="3 2"/>
+          <text class="f3-i" x="432" y="84" fill="#8a4b2a">8番 ← 屑</text>
+          <text class="f3-v" x="432" y="66" fill="#8a4b2a">0.3234</text>
+
+          <line x1="0" y1="182" x2="640" y2="182" stroke="#dcd8ce"/>
+          <text class="f3-note" x="0" y="200">屑がまともな店名より高い。順序が逆転しているので、閾値をどこに置いても分離できません。</text>
+        </svg>
+      </div>
+      <figcaption>原因は<b>短い固有名詞の埋め込みが不安定</b>で、類似度が意味ではなく文長と形式に引きずられること。この足切りは <code>ideate</code> のスコアを動かし、あるモデルの順位を 2 つ変えています（推定の下限）。<b>直っていませんが、どれだけ効いているかは <code>qb gate-audit</code> が測ります。</b></figcaption>
+    </figure>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 640 200" role="img" aria-labelledby="fig4-t fig4-d">
+          <title id="fig4-t">ideate のスコアは 3 つの積で、1 つでも 0 なら 0 に落ちる</title>
+          <desc id="fig4-d">valid_rate と coverage と diversity の積。案が 1 件以下まで削られると多様性が 0 になり、スコアは比例減ではなく崖のように 0 に落ちる。</desc>
+          <style>
+            .f4-t{font:500 13px "JetBrains Mono",monospace;fill:#2f5d50}
+            .f4-s{font:400 11px -apple-system,sans-serif;fill:#4a4f54}
+            .f4-op{font:400 18px "JetBrains Mono",monospace;fill:#4a4f54}
+            .f4-note{font:400 11px -apple-system,sans-serif;fill:#4a4f54}
+          </style>
+
+          <g transform="translate(0,24)">
+            <rect x="0" y="0" width="150" height="58" fill="none" stroke="#2f5d50" stroke-width="2"/>
+            <text class="f4-t" x="16" y="26">valid_rate</text>
+            <text class="f4-s" x="16" y="46">件数を守ったか</text>
+
+            <text class="f4-op" x="166" y="36">×</text>
+
+            <rect x="196" y="0" width="150" height="58" fill="none" stroke="#2f5d50" stroke-width="2"/>
+            <text class="f4-t" x="212" y="26">coverage</text>
+            <text class="f4-s" x="212" y="46">観点を含むか</text>
+
+            <text class="f4-op" x="362" y="36">×</text>
+
+            <rect x="392" y="0" width="150" height="58" fill="none" stroke="#8a4b2a" stroke-width="2"/>
+            <text class="f4-t" x="408" y="26" fill="#8a4b2a">diversity</text>
+            <text class="f4-s" x="408" y="46">案が散っているか</text>
+          </g>
+
+          <path d="M467 86 V116" fill="none" stroke="#8a4b2a" stroke-width="1.5"/>
+          <path d="M467 116 l-4 -7 h8 z" fill="#8a4b2a"/>
+          <text class="f4-note" x="392" y="136" fill="#8a4b2a">案が 1 件以下まで削られると 0</text>
+
+          <line x1="0" y1="152" x2="640" y2="152" stroke="#dcd8ce"/>
+          <text class="f4-note" x="0" y="172"><tspan font-weight="600" fill="#1a1d1f">積なので、どれか 1 つが 0 ならスコアは 0 になります。</tspan>比例して減るのではなく、崖のように落ちます。</text>
+          <text class="f4-note" x="0" y="190">実測では、ある課題の 2 モデルで 6 割の生成がこの崖に落ちました。どの生成が落ちたかは <tspan font-family="JetBrains Mono,monospace">qb report</tspan> に出ます。</text>
+        </svg>
+      </div>
+      <figcaption>支離滅裂な出力ほど案同士が散らばるので、<b>多様性だけを見ると壊れたモデルが最高得点を取ります。</b>積にしてあるのはそのためです。</figcaption>
+    </figure>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 640 190" role="img" aria-labelledby="fig5-t fig5-d">
+          <title id="fig5-t">num_ctx が足りないと、ollama は警告せずにプロンプトを切り詰める</title>
+          <desc id="fig5-d">7821 文字のプロンプトを num_ctx 4096 に投げると 2050 トークンしか入らず、モデルは事実を渡されないまま答える。</desc>
+          <style>
+            .f5-l{font:400 11px "JetBrains Mono",monospace;fill:#4a4f54}
+            .f5-note{font:400 11px -apple-system,sans-serif;fill:#4a4f54}
+            .f5-q{font:400 12px -apple-system,sans-serif;fill:#8a4b2a}
+          </style>
+
+          <text class="f5-l" x="0" y="16">投げたプロンプト — 7,821 文字</text>
+          <rect x="0" y="26" width="600" height="22" fill="#e4ede9" stroke="#2f5d50"/>
+
+          <text class="f5-l" x="0" y="78">実際に入った分 — 2,050 トークン</text>
+          <rect x="0" y="88" width="157" height="22" fill="#2f5d50"/>
+          <rect x="157" y="88" width="443" height="22" fill="none" stroke="#dcd8ce" stroke-dasharray="4 3"/>
+          <text class="f5-l" x="169" y="103" fill="#8a4b2a">ここから先は黙って捨てられる</text>
+
+          <line x1="0" y1="134" x2="640" y2="134" stroke="#dcd8ce"/>
+          <text class="f5-q" x="0" y="154">モデルの答え —「文中に記述はありません」</text>
+          <text class="f5-note" x="0" y="176">そのまま採点すると「長文脈で事実を保持できない」という結論が出ますが、実際には事実を渡していません。</text>
+        </svg>
+      </div>
+      <figcaption><b>ollama はエラーも警告も出しません。</b>そのため <code>qb lint-cases</code> が静的に、<code>qb run</code> が実測値で二重に止めます。</figcaption>
+    </figure>
+
+    <ul class="limits" style="margin-top:2.4rem">
+      <li>
+        <h3>モデル数が少ないとプロファイルが不安定になる</h3>
+        <p>スコアは全モデルの平均を引いた残差で出すので、比較対象が少ないほど推定が甘くなります。同じファミリのモデルばかりだと誤差も相関します。<b>モデルを足すほど安定します。</b></p>
+      </li>
+      <li>
+        <h3>生成コードのメモリ使用量は制限できない</h3>
+        <p>macOS では <code>RLIMIT_AS</code> / <code>RLIMIT_DATA</code> / <code>RLIMIT_STACK</code> のいずれも設定できません。CPU 時間と実時間の二重で止める設計ですが、<b>メモリ暴走に対する上限はありません。</b></p>
+      </li>
+      <li>
+        <h3>「この次元に弱い」と「このケースに弱い」を分けられない</h3>
+        <p>観測が少ないほど、その中の 1 件で結論が決まります。実測では、問題を 1 種類から 2 種類に増やしただけで<b>同じ 2 モデルの勝敗が入れ替わりました。</b>このぶれは <code>qb stability</code> が数値で出しますが、<b>測れるようになるだけで直るわけではありません。</b></p>
+      </li>
+      <li>
+        <h3>計測中に他のプロセスが GPU やディスクを使うと数字が汚れる</h3>
+        <p>特にモデルのロード時間に効きます。仮名の無い短い日本語（全漢字の店名など）は言語判定できず、言語別の集計から外れます。</p>
+      </li>
+    </ul>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ 使い方 ============ -->
+  <section class="band">
+    <div class="sec-head"><span class="sec-num">06</span><h2>使い方</h2></div>
+    <div class="prose">
+      <p>Python 3.11 以上と <a href="https://docs.astral.sh/uv/">uv</a>、動いている <a href="https://ollama.com/">Ollama</a>、測りたいモデルが <code>ollama pull</code> 済みであることが要ります。</p>
+    </div>
+<pre><span class="c"># 埋め込みモデルを入れる（ideate 次元の採点で使う）</span>
+ollama pull bge-m3
+uv sync
+
+<span class="c"># 生成を実行する</span>
+uv run qb run --models qwen2.5:0.5b,qwen2.5:1.5b --repeats 5
+
+<span class="c"># 採点して、輪郭を出す</span>
+uv run qb score --run main
+uv run qb report --run main</pre>
+    <div class="prose">
+      <p><strong>中断してかまいません。</strong><code>Ctrl-C</code> で止めても、同じ <code>--run</code> 名で再実行すれば続きから再開します。</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ============ リンク ============ -->
+  <section class="band">
+    <div class="sec-head"><span class="sec-num">07</span><h2>続きを読む</h2></div>
+    <div class="links">
+      <a class="card" href="https://github.com/fracturelabdev/quirkbench">
+        <span class="k">Repository</span>
+        <span class="v">fracturelabdev/quirkbench</span>
+        <span class="n">コードとドキュメントは MIT。識別子だけが対象外です。</span>
+      </a>
+      <a class="card" href="https://github.com/fracturelabdev/quirkbench#実測--手元で回した結果">
+        <span class="k">実測データ</span>
+        <span class="v">手元で回した結果</span>
+        <span class="n">このページの図に出てくる数字は、README で公開しているものの再掲です。次元プロファイル・日英差・結論の安定性・量子化を替えたときの変化は、README にあります。</span>
+      </a>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <footer>
+    <div class="foot-in">
+      <span>quirkbench</span>
+      <span><a href="https://fracturelab.dev">a fracturelab tool</a></span>
+      <span>MIT（識別子を除く）</span>
+    </div>
+  </footer>
+
+</div>
+
+</body>
+</html>
