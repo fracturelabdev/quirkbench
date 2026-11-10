@@ -1,0 +1,40 @@
+# code-read 次元 — 上の ja 版の対訳。
+# `off-by-one` は平均の分母が 1 少ない。`accumulate` は `=` と `+=` の取り違え。
+# こちらは "at least" を `>` で書いて、境界の 1 件を落とす。
+# 誤りは比較の行だけにある。別の行を直しても契約は満たせない。
+# 答えの数字は `accumulate` と同じ 4 だが、バグの型は違う。
+# 難度は手元のモデルで未測定。行をまたがないと見えないバグは floor だったので、
+# その形にはしていない。
+id: code-read-count-long-en
+dim: code-read
+lang: en
+task: count-long
+pair: code-read-count-long-ja
+
+prompt: |
+  Exactly one line in the following code has a bug. Output only that line
+  number. Output nothing but the digits.
+
+  count_at_least_three counts words whose length is at least 3.
+
+  1: def count_at_least_three(words):
+  2:     n = 0
+  3:     for word in words:
+  4:         if len(word) > 3:
+  5:             n += 1
+  6:     return n
+  7:
+  8: print(count_at_least_three(["owl", "to", "heron"]))
+
+options:
+  num_predict: 64
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: exact
+  match: equals
+  expect: "4"

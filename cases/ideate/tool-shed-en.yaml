@@ -1,0 +1,32 @@
+# ideate 次元 — 4 つ目のタスクの対訳。
+# `coffee-shop` は命名、`bookstore` は施策、`questions` は疑問文。
+# こちらは規則（義務・禁止の文）。短い固有名詞は足さない。
+# 命名課題の脱線ゲートは順序が逆転しており、同じ型を足しても分離できない。
+# 難度は手元のモデルで未測定。
+id: ideate-tool-shed-en
+dim: ideate
+lang: en
+task: tool-shed
+pair: ideate-tool-shed-ja
+
+prompt: |
+  Think of 5 rules for residents borrowing tools from a shared neighbourhood
+  shed. Use a numbered list with one rule per line. No explanations.
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: en
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  count: {n: 5, pattern: numbered_list}
+  topic: rules for residents borrowing tools from a shared neighbourhood shed
+  coverage_terms:
+    - [return, back]
+    - [damage, broken, repair, replace]
+    - [reserve, schedule, queue]

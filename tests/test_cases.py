@@ -169,3 +169,113 @@ def test_real_cases_all_validate():
     """同梱ケースが検証を通ることを実ファイルで確認する。"""
     cases = load_cases(Path("cases"))
     assert {c.id for c in cases} >= {"instruct-json-profile-ja", "instruct-json-profile-en"}
+
+
+def test_bundled_pytest_references_pass_their_checks():
+    """参照解が自分のテストを通ることを、素の Python で確かめる。
+
+    隔離の自己診断は macOS の ``qb score`` が持つ。
+    ここは参照解とテストの食い違いだけを見る。CI に macOS は無い。
+    """
+    cases = load_cases(Path("cases"))
+    checked = 0
+    for case in cases:
+        if case.score.get("kind") != "pytest":
+            continue
+        ref_ns: dict[str, object] = {}
+        exec(case.score["reference"], ref_ns, ref_ns)
+        entry = str(case.score["entry_point"])
+        test_ns: dict[str, object] = {}
+        exec(case.score["test"], test_ns, test_ns)
+        check = test_ns["check"]
+        assert callable(check)
+        check(ref_ns[entry])
+        checked += 1
+    assert checked >= 1
+
+
+def test_contains_expect_appears_exactly_once():
+    """``contains`` の期待値がプロンプトに 1 回だけある。
+
+    0 回なら正解が本文に無い。2 回以上なら、質問や囮が期待値を含んでいて
+    そこを繰り返すだけで正解になる。
+    """
+    cases = load_cases(Path("cases"))
+    seen = 0
+    for case in cases:
+        if case.score.get("kind") != "exact" or case.score.get("match") != "contains":
+            continue
+        expect = case.score["expect"]
+        values = expect if isinstance(expect, list) else [expect]
+        for value in values:
+            assert case.prompt.count(str(value)) == 1, case.id
+        seen += 1
+    assert seen >= 1
+
+
+def test_declared_expect_is_a_perfect_answer():
+    """期待値そのものが、その採点器で満点になる。
+
+    参照解の実行は上のテストが見る。こちらは JSON・数値・完全一致で、
+    期待値の型や表記が採点器と食い違っていないことを見る。
+    """
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    cases = load_cases(Path("cases"))
+    checked = 0
+    for case in cases:
+        kind = case.score.get("kind")
+        raw = _perfect_answer(case.score)
+        if raw is None or kind not in {"json_schema", "json_keys", "exact", "numeric"}:
+            continue
+        result = score(parse(raw, case.failure), case, executor=None, embedder=None)
+        assert result.score == 1.0, case.id
+        checked += 1
+    assert checked >= 1
+
+
+@pytest.mark.parametrize("case_id", ["instruct-shift-ja", "instruct-shift-en"])
+def test_shift_rejects_keys_outside_the_four(case_id):
+    """``shift`` はキーを 4 つに限る指示なので、余分なキーを足した答えは満点にしない。"""
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    answer = dict(case.score["expect"], extra=True)
+    result = score(
+        parse(json.dumps(answer, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert result.score == 0.0
+    assert result.sub_metrics["schema_ok"] is False
+
+
+def _perfect_answer(spec: dict) -> str | None:
+    """ケースの expect から、採点器が満点を付けるべき文字列を作る。作れなければ None。"""
+    import json
+
+    kind = spec.get("kind")
+    expect = spec.get("expect")
+    if kind == "json_keys" and isinstance(expect, dict):
+        return json.dumps(expect, ensure_ascii=False)
+    if kind == "json_schema" and isinstance(expect, dict):
+        required = set((spec.get("schema") or {}).get("required") or [])
+        # occupation のように、正解が一意でないキーは expect に入れない。
+        # そのケースはここからは満点の形を復元できない
+        if not required <= set(expect):
+            return None
+        return json.dumps(expect, ensure_ascii=False)
+    if kind == "numeric":
+        return str(expect)
+    if kind == "exact":
+        values = expect if isinstance(expect, list) else [expect]
+        text = str(values[0])
+        if spec.get("match") == "contains":
+            return f"答えは {text} です"
+        return text
+    return None

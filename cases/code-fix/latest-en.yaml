@@ -1,0 +1,49 @@
+# code-fix 次元 — 上の ja 版の対訳。
+# `median` は偶数個の分岐漏れ、`vowels` は大文字の条件漏れ。
+# こちらは比較の向きが逆で、最大を取るべきところで最小を取る。
+# 同点のときは先に現れたほうを返す。`>=` に直すと後ろの同点が勝ってしまう。
+# 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
+id: code-fix-latest-en
+dim: code-fix
+lang: en
+task: latest
+pair: code-fix-latest-ja
+
+prompt: |
+  The function below has a bug. Output only the corrected function in Python.
+  Write nothing but the code.
+
+  def latest(records: list[tuple[str, int]]) -> str:
+      """Return the name with the greatest year. If several records share
+      that year, return the one that appears first. records is never empty."""
+      best_name, best_year = records[0]
+      for name, year in records[1:]:
+          if year < best_year:
+              best_name, best_year = name, year
+      return best_name
+
+options:
+  num_predict: 512
+
+failure:
+  format: python
+  extract: fenced_or_whole
+  language: none
+  min_tokens: 20
+
+score:
+  kind: pytest
+  entry_point: latest
+  timeout_seconds: 30
+  test: |
+    def check(candidate):
+        assert candidate([("aya", 1990), ("mei", 2001), ("rin", 1995)]) == "mei"
+        assert candidate([("aya", 2001), ("mei", 2001)]) == "aya"
+        assert candidate([("rin", 1980)]) == "rin"
+  reference: |
+    def latest(records):
+        best_name, best_year = records[0]
+        for name, year in records[1:]:
+            if year > best_year:
+                best_name, best_year = name, year
+        return best_name
