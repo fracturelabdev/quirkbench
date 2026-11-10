@@ -235,6 +235,26 @@ def test_declared_expect_is_a_perfect_answer():
     assert checked >= 1
 
 
+@pytest.mark.parametrize("case_id", ["instruct-shift-ja", "instruct-shift-en"])
+def test_shift_rejects_keys_outside_the_four(case_id):
+    """``shift`` はキーを 4 つに限る指示なので、余分なキーを足した答えは満点にしない。"""
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    answer = dict(case.score["expect"], extra=True)
+    result = score(
+        parse(json.dumps(answer, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert result.score == 0.0
+    assert result.sub_metrics["schema_ok"] is False
+
+
 def _perfect_answer(spec: dict) -> str | None:
     """ケースの expect から、採点器が満点を付けるべき文字列を作る。作れなければ None。"""
     import json

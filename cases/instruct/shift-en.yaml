@@ -33,6 +33,7 @@ score:
   schema:
     type: object
     required: [shift, lead, start_hour, break_minutes]
+    additionalProperties: false
     properties:
       shift: {type: string, enum: [early, late, night]}
       lead: {type: string, minLength: 1, maxLength: 16}
