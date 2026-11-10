@@ -1,0 +1,32 @@
+# ideate 次元 — 4 つ目のタスク。
+# `coffee-shop` は命名、`bookstore` は施策、`questions` は疑問文。
+# こちらは規則（義務・禁止の文）。短い固有名詞は足さない。
+# 命名課題の脱線ゲートは順序が逆転しており、同じ型を足しても分離できない。
+# 難度は手元のモデルで未測定。
+id: ideate-tool-shed-ja
+dim: ideate
+lang: ja
+task: tool-shed
+pair: ideate-tool-shed-en
+
+prompt: |
+  町内の共用物置で、住民が工具を借りるときの規則を 5 つ考えてください。
+  番号つきの箇条書きで、1 行に 1 規則だけ書いてください。説明は不要です。
+
+options:
+  num_predict: 300
+
+failure:
+  format: none
+  language: ja
+  count: {n: 5, pattern: numbered_list}
+  min_tokens: 10
+
+score:
+  kind: ideate
+  count: {n: 5, pattern: numbered_list}
+  topic: 町内の共用物置で住民が工具を借りるときの規則
+  coverage_terms:
+    - [返し, 返却, 戻す]
+    - [破損, 壊, 修理, 弁償]
+    - [予約, 順番, 交代]

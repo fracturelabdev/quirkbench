@@ -1,0 +1,35 @@
+# extract 次元 — 上の ja 版の対訳。
+# `vet` は人物の文字列、`order` は正の整数が並ぶ伝票。
+# こちらは負の温度と 0 の湿度を含む計測値。符号を落とす、ゼロを省く、
+# という取りこぼしは前の 2 課題には出ない。
+# 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
+id: extract-sample-en
+dim: extract
+lang: en
+task: sample
+pair: extract-sample-ja
+
+prompt: |
+  Extract the information from the following sentence and output it as JSON.
+  Output nothing but JSON. The keys are sample, temperature, humidity, weight
+  and operator.
+
+  "Sample B7 is at -4 degrees, humidity 0 percent, and weighs 250 grams. The operator is Aoki."
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_keys
+  expect:
+    sample: B7
+    temperature: -4
+    humidity: 0
+    weight: 250
+    operator: Aoki

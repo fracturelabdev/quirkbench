@@ -1,0 +1,45 @@
+# instruct 次元 — 上の ja 版の対訳。
+# 列挙値・整数の上下限・文字列長。配列も真偽値も置かない。
+# 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
+id: instruct-shift-en
+dim: instruct
+lang: en
+task: shift
+pair: instruct-shift-ja
+
+prompt: |
+  Turn the following shift note into JSON. Write nothing but the JSON.
+  Keep the key names in English.
+
+  "The early shift lead is Mori. It starts at 6, and the break is 45 minutes."
+
+  Output exactly these four keys.
+  - shift: exactly one of "early", "late", "night"
+  - lead: the lead's family name, between 1 and 16 characters
+  - start_hour: an integer from 0 through 23
+  - break_minutes: an integer from 0 through 90
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_schema
+  schema:
+    type: object
+    required: [shift, lead, start_hour, break_minutes]
+    properties:
+      shift: {type: string, enum: [early, late, night]}
+      lead: {type: string, minLength: 1, maxLength: 16}
+      start_hour: {type: integer, minimum: 0, maximum: 23}
+      break_minutes: {type: integer, minimum: 0, maximum: 90}
+  expect:
+    shift: early
+    lead: Mori
+    start_hour: 6
+    break_minutes: 45

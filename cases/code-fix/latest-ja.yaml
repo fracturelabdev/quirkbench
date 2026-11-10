@@ -1,0 +1,50 @@
+# code-fix 次元 — 3 つ目のタスク。
+# `median` は偶数個の分岐漏れ、`vowels` は大文字の条件漏れ。
+# こちらは比較の向きが逆で、最大を取るべきところで最小を取る。
+# 同点のときは先に現れたほうを返す。`>=` に直すと後ろの同点が勝ってしまう。
+# 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
+id: code-fix-latest-ja
+dim: code-fix
+lang: ja
+task: latest
+pair: code-fix-latest-en
+
+prompt: |
+  次の関数にはバグがあります。修正した関数だけを Python で出力してください。
+  コード以外は書かないでください。
+
+  def latest(records: list[tuple[str, int]]) -> str:
+      """(name, year) のリストから、year が最大の name を返す。
+      同じ year が複数あるときは、先に現れた name を返す。
+      records は空ではない。"""
+      best_name, best_year = records[0]
+      for name, year in records[1:]:
+          if year < best_year:
+              best_name, best_year = name, year
+      return best_name
+
+options:
+  num_predict: 512
+
+failure:
+  format: python
+  extract: fenced_or_whole
+  language: none
+  min_tokens: 20
+
+score:
+  kind: pytest
+  entry_point: latest
+  timeout_seconds: 30
+  test: |
+    def check(candidate):
+        assert candidate([("aya", 1990), ("mei", 2001), ("rin", 1995)]) == "mei"
+        assert candidate([("aya", 2001), ("mei", 2001)]) == "aya"
+        assert candidate([("rin", 1980)]) == "rin"
+  reference: |
+    def latest(records):
+        best_name, best_year = records[0]
+        for name, year in records[1:]:
+            if year > best_year:
+                best_name, best_year = name, year
+        return best_name
