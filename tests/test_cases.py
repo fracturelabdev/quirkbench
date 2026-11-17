@@ -324,6 +324,113 @@ def test_clinic_mid_rejects_a_listed_decoy(answer: str, expected: float) -> None
     assert result.score == expected
 
 
+def _run_check(case, fn) -> None:
+    namespace: dict[str, object] = {}
+    exec(case.score["test"], namespace, namespace)
+    check = namespace["check"]
+    assert callable(check)
+    check(fn)
+
+
+def test_latest_rejects_a_prefix_and_the_seeded_comparison():
+    """最大は末尾に置く。同点のあいだに小さい年を挟み、種まきした ``<`` を落とす。
+
+    最大が 2 件目だと、先頭 2 件だけ比べる実装が通る。
+    同点だけの並びだと、``<`` も先に現れたほうを残して通る。
+    """
+    cases = [c for c in load_cases(Path("cases")) if c.task == "latest"]
+    assert len(cases) == 2
+
+    def seeded(records):
+        best_name, best_year = records[0]
+        for name, year in records[1:]:
+            if year < best_year:
+                best_name, best_year = name, year
+        return best_name
+
+    def prefix(records):
+        window = records[:2]
+        best_name, best_year = window[0]
+        for name, year in window[1:]:
+            if year > best_year:
+                best_name, best_year = name, year
+        return best_name
+
+    def later_tie(records):
+        best_name, best_year = records[0]
+        for name, year in records[1:]:
+            if year >= best_year:
+                best_name, best_year = name, year
+        return best_name
+
+    for case in cases:
+        for fn in (seeded, prefix, later_tie):
+            with pytest.raises(AssertionError):
+                _run_check(case, fn)
+
+
+def test_count_long_line_number_is_not_shared():
+    """常に同じ行番号を書くモデルが、別の code-read まで通らない。"""
+    cases = {c.id: c for c in load_cases(Path("cases"))}
+    expect = cases["code-read-count-long-ja"].score["expect"]
+    assert expect == cases["code-read-count-long-en"].score["expect"]
+    shared = {
+        cases["code-read-accumulate-ja"].score["expect"],
+        cases["code-read-accumulate-en"].score["expect"],
+        cases["code-read-off-by-one-ja"].score["expect"],
+        cases["code-read-off-by-one-en"].score["expect"],
+    }
+    assert expect not in shared
+    for case_id in ("code-read-count-long-ja", "code-read-count-long-en"):
+        bug_line = next(
+            line for line in cases[case_id].prompt.splitlines() if line.startswith(f"{expect}:")
+        )
+        assert ">" in bug_line
+        assert "len(" in bug_line
+
+
+@pytest.mark.parametrize(
+    ("case_id", "needles"),
+    [
+        ("extract-sample-ja", ["単位を付けない整数", "符号を残", "0 は 0"]),
+        ("extract-sample-en", ["no unit", "minus sign", "write zero as 0"]),
+    ],
+)
+def test_sample_prompt_states_sign_zero_and_unit(case_id, needles):
+    """期待値は単位なしの整数。符号・ゼロ・単位の境界をプロンプトが言う。"""
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    for needle in needles:
+        assert needle in case.prompt
+    for key in ("temperature", "humidity", "weight"):
+        assert isinstance(case.score["expect"][key], int)
+        assert not isinstance(case.score["expect"][key], bool)
+
+
+def test_tool_shed_coverage_terms_reject_loose_substrings():
+    """``back`` は返却以外に当たり、``壊`` 1 文字は破壊・崩壊・決壊に当たる。"""
+    from quirkbench.scorers.ideate import _coverage
+
+    cases = {c.id: c for c in load_cases(Path("cases"))}
+    en = cases["ideate-tool-shed-en"].score["coverage_terms"]
+    ja = cases["ideate-tool-shed-ja"].score["coverage_terms"]
+    en_words = [word for group in en for word in group]
+    ja_words = [word for group in ja for word in group]
+    assert "back" not in en_words
+    assert "壊" not in ja_words
+    assert all(len(word) >= 4 for word in en_words)
+    assert all(len(word) >= 2 for word in ja_words)
+
+    _, missed = _coverage(["Keep a backup in the back of the shed."], en)
+    assert 0 in missed
+    _, missed = _coverage(["Return the drill the next day."], en)
+    assert 0 not in missed
+
+    _, missed = _coverage(["決壊や崩壊や破壊の話は規則ではない。"], ja)
+    assert 1 in missed
+    _, missed = _coverage(["壊したら修理する。"], ja)
+    assert 1 not in missed
+
+
 def _perfect_answer(spec: dict) -> str | None:
     """ケースの expect から、採点器が満点を付けるべき文字列を作る。作れなければ None。"""
     import json

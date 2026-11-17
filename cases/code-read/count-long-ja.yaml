@@ -2,7 +2,9 @@
 # `off-by-one` は平均の分母が 1 少ない。`accumulate` は `=` と `+=` の取り違え。
 # こちらは「以上」を `>` で書いて、境界の 1 件を落とす。
 # 誤りは比較の行だけにある。別の行を直しても契約は満たせない。
-# 答えの数字は `accumulate` と同じ 4 だが、バグの型は違う。
+# 答えは 6。`accumulate` は 4、`off-by-one` は 5。
+# 同じ数字を正解にすると、常にその数字を書くモデルが両方通る。
+# バグ行の前に足した 2 行は説明で、比較の閾値を持たない。
 # 難度は手元のモデルで未測定。行をまたがないと見えないバグは floor だったので、
 # その形にはしていない。
 id: code-read-count-long-ja
@@ -18,13 +20,15 @@ prompt: |
   count_at_least_three は、長さが 3 文字以上の単語を数えます。
 
   1: def count_at_least_three(words):
-  2:     n = 0
-  3:     for word in words:
-  4:         if len(word) > 3:
-  5:             n += 1
-  6:     return n
-  7:
-  8: print(count_at_least_three(["owl", "to", "heron"]))
+  2:     """words を順に見て、条件を満たす個数を返す。
+  3:     words は文字列のリスト。"""
+  4:     n = 0
+  5:     for word in words:
+  6:         if len(word) > 3:
+  7:             n += 1
+  8:     return n
+  9:
+  10: print(count_at_least_three(["owl", "to", "heron"]))
 
 options:
   num_predict: 64
@@ -37,4 +41,4 @@ failure:
 score:
   kind: exact
   match: equals
-  expect: "4"
+  expect: "6"
