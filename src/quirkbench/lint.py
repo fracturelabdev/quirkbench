@@ -19,6 +19,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .cases import Case
+from .scorers.answer import normalize_answer
 
 #: assert 数の上下限。8 個束ねると pass@1 が 0.47 ずれる（§12.2 の実測表）
 MIN_ASSERTS = 1
@@ -164,6 +165,7 @@ def _lint_answer(case: Case) -> list[LintIssue]:
                         "無関係な出力に偶然含まれて正解になる",
                     )
                 )
+        issues.extend(_lint_exclude(case, mode))
     if kind == "numeric":
         try:
             float(spec["expect"])
@@ -173,6 +175,50 @@ def _lint_answer(case: Case) -> list[LintIssue]:
             )
         if float(spec.get("tolerance", 0.0)) < 0:
             issues.append(LintIssue(case.id, "numeric_tolerance", "tolerance が負"))
+    return issues
+
+
+def _lint_exclude(case: Case, mode: str) -> list[LintIssue]:
+    """``exclude`` は ``contains`` の穴を塞ぐ。短すぎると正答まで落ちる。"""
+    spec = case.score
+    exclude = spec.get("exclude")
+    if exclude is None:
+        return []
+    if mode != "contains":
+        return [
+            LintIssue(
+                case.id,
+                "exclude_requires_contains",
+                "score.exclude は match=contains のときだけ書く。"
+                "equals は回答全体の一致なので、囮を並べた回答は既に落ちる",
+            )
+        ]
+
+    blocked = exclude if isinstance(exclude, list) else [exclude]
+    normalized = [normalize_answer(str(v)) for v in blocked]
+    issues: list[LintIssue] = []
+    short = [v for v in normalized if len(v) < MIN_CONTAINS_LENGTH]
+    if short:
+        issues.append(
+            LintIssue(
+                case.id,
+                "exclude_too_short",
+                f"score.exclude の {short} が {MIN_CONTAINS_LENGTH} 文字未満。"
+                "無関係な出力に偶然含まれて、正答まで落ちる",
+            )
+        )
+    expect = spec["expect"]
+    expect_values = expect if isinstance(expect, list) else [expect]
+    wanted = [normalize_answer(str(v)) for v in expect_values]
+    overlap = [b for b in normalized if any(w and b in w for w in wanted)]
+    if overlap:
+        issues.append(
+            LintIssue(
+                case.id,
+                "exclude_overlaps_expect",
+                f"score.exclude の {overlap} が期待値に含まれる。正答そのものが不正解になる",
+            )
+        )
     return issues
 
 

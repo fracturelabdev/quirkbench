@@ -87,6 +87,60 @@ def test_contains_mode_still_needs_the_answer() -> None:
     assert run_exact("文中に記述はありません。", match="contains", expect="MULBERRY-7").score == 0.0
 
 
+def test_contains_without_exclude_still_accepts_extra_text() -> None:
+    """除外を書いていない ``contains`` は、今まで通り余分な文字列を許す。"""
+    assert (
+        run_exact("SPRUCE-91 または PINECONE-19", match="contains", expect="PINECONE-19").score
+        == 1.0
+    )
+
+
+def test_exclude_rejects_an_answer_that_also_names_the_decoy() -> None:
+    """正答を含んでいても、除外文字列を一緒に書いた回答は正解にしない。"""
+    both = run_exact(
+        "SPRUCE-91 または PINECONE-19",
+        match="contains",
+        expect="PINECONE-19",
+        exclude="SPRUCE-91",
+    )
+    assert both.score == 0.0
+    assert both.sub_metrics["contains_answer"] is True
+    assert both.sub_metrics["excluded"] is True
+
+    bare = run_exact("PINECONE-19", match="contains", expect="PINECONE-19", exclude="SPRUCE-91")
+    assert bare.score == 1.0
+    assert bare.sub_metrics["excluded"] is False
+
+    sentence = run_exact(
+        "第 3 診療所の当直符号は PINECONE-19 です。",
+        match="contains",
+        expect="PINECONE-19",
+        exclude="SPRUCE-91",
+    )
+    assert sentence.score == 1.0
+
+
+def test_exclude_uses_the_same_normalisation_as_the_answer() -> None:
+    """全角の囮も、正規化してから含むかを見る。"""
+    result = run_exact(
+        "ＳＰＲＵＣＥ－９１ または PINECONE-19",
+        match="contains",
+        expect="PINECONE-19",
+        exclude="SPRUCE-91",
+    )
+    assert result.score == 0.0
+
+
+def test_exclude_accepts_a_list() -> None:
+    result = run_exact(
+        "OAK-3 または PINECONE-19",
+        match="contains",
+        expect="PINECONE-19",
+        exclude=["SPRUCE-91", "OAK-3"],
+    )
+    assert result.score == 0.0
+
+
 def test_bare_answer_is_reported_but_not_scored() -> None:
     """**「答えは知っているが黙れない」を読めるようにする**（§15.1）。
 

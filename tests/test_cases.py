@@ -98,6 +98,49 @@ def test_failure_typo_rejected():
         _build(failure={"format": "json", "min_token": 4})
 
 
+def test_exact_unknown_score_key_rejected():
+    """``exclude`` の typo は、囮を含む回答が静かに正解になる。"""
+    with pytest.raises(CaseError, match=r"未知の score キー"):
+        parse_case(
+            {
+                "id": "x",
+                "dim": "longctx",
+                "task": "t",
+                "lang": "ja",
+                "prompt": "p",
+                "failure": {"format": "none"},
+                "score": {
+                    "kind": "exact",
+                    "match": "contains",
+                    "expect": "PINECONE-19",
+                    "exlude": "SPRUCE-91",
+                },
+            },
+            Path("x.yaml"),
+        )
+
+
+def test_exact_exclude_must_be_nonempty_strings():
+    with pytest.raises(CaseError, match=r"score\.exclude"):
+        parse_case(
+            {
+                "id": "x",
+                "dim": "longctx",
+                "task": "t",
+                "lang": "ja",
+                "prompt": "p",
+                "failure": {"format": "none"},
+                "score": {
+                    "kind": "exact",
+                    "match": "contains",
+                    "expect": "PINECONE-19",
+                    "exclude": ["SPRUCE-91", ""],
+                },
+            },
+            Path("x.yaml"),
+        )
+
+
 def test_failure_unknown_format_rejected():
     with pytest.raises(CaseError, match=r"未知の failure\.format"):
         _build(failure={"format": "yaml"}, score={"kind": "exact"})
@@ -253,6 +296,32 @@ def test_shift_rejects_keys_outside_the_four(case_id):
     )
     assert result.score == 0.0
     assert result.sub_metrics["schema_ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        ("PINECONE-19", 1.0),
+        ("第 3 診療所の当直符号は PINECONE-19 です。", 1.0),
+        ("SPRUCE-91 または PINECONE-19", 0.0),
+        ("PINECONE-19 または SPRUCE-91", 0.0),
+        ("ＳＰＲＵＣＥ－９１ または PINECONE-19", 0.0),
+        ("SPRUCE-91", 0.0),
+    ],
+)
+def test_clinic_mid_rejects_a_listed_decoy(answer: str, expected: float) -> None:
+    """第 3 診療所の符号を問う。正答だけなら正解、囮と並べたら不正解。
+
+    ``contains`` のまま、文で返した正答は通す。``equals`` にすると
+    出力の素っ気なさを測ることになる。囮の符号を含んだ回答だけを落とす。
+    全角の囮も正規化してから見る。
+    """
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == "longctx-clinic-mid-ja"]
+    result = score(parse(answer, case.failure), case, executor=None, embedder=None)
+    assert result.score == expected
 
 
 def _perfect_answer(spec: dict) -> str | None:

@@ -30,6 +30,10 @@ FAILURE_KEYS = frozenset(
 # score.kind ごとに要求する failure.format。ずれていると採点と失敗判定が別物を見る
 REQUIRED_FORMAT = {"json_schema": "json", "json_keys": "json", "pytest": "python"}
 
+# score.kind=exact で書けるキー。未知のキーは黙って無視せず落とす。
+# `exclude` の typo は、囮を含む回答が静かに正解になる
+EXACT_SCORE_KEYS = frozenset({"kind", "match", "expect", "exclude"})
+
 # 既定の生成パラメータ。ケース側の options で上書きできる。
 # temperature を 0 にしないのは、**seed 間のばらつきそのものを測る**のが目的だから。
 DEFAULT_OPTIONS: dict[str, Any] = {
@@ -64,6 +68,12 @@ class Case:
     prompt_hash: str = field(compare=False, default="")
     options_hash: str = field(compare=False, default="")
     check_hash: str = field(compare=False, default="")
+
+
+def _nonempty_strings(value: Any) -> bool:
+    """文字列、または空でない文字列だけのリスト。"""
+    values = value if isinstance(value, list) else [value]
+    return bool(values) and all(isinstance(item, str) and bool(item.strip()) for item in values)
 
 
 def _require(raw: dict[str, Any], key: str, path: Path) -> Any:
@@ -174,6 +184,15 @@ def _validate_score(score: dict[str, Any], failure: dict[str, Any], path: Path) 
             minischema.check_spec(schema)
         except minischema.SchemaError as exc:
             raise CaseError(f"{path}: {exc}") from exc
+    if kind == "exact":
+        unknown = set(score) - EXACT_SCORE_KEYS
+        if unknown:
+            raise CaseError(f"{path}: 未知の score キー {sorted(unknown)}")
+        exclude = score.get("exclude")
+        if exclude is not None and not _nonempty_strings(exclude):
+            raise CaseError(
+                f"{path}: score.exclude は空でない文字列、またはそのリストでなければならない"
+            )
 
 
 def load_cases(

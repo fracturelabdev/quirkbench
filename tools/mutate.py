@@ -553,8 +553,14 @@ M = [
     (
         "scorers/answer.py",
         "exact の contains を equals と同じにする（長文脈が出力の素っ気なさを測る）",
-        '    hit = contains if mode == "contains" else equals',
-        "    hit = equals",
+        '    matched = contains if mode == "contains" else equals',
+        "    matched = equals",
+    ),
+    (
+        "scorers/answer.py",
+        "exact の exclude を無視する（囮と正答を並べても正解になる）",
+        "    hit = matched and not excluded",
+        "    hit = matched",
     ),
     (
         "scorers/answer.py",
@@ -586,6 +592,24 @@ M = [
         "contains の 4 文字下限を外す（短い答えが偶然一致する）",
         "            short = [str(v) for v in values if len(str(v).strip()) < MIN_CONTAINS_LENGTH]",
         "            short = []",
+    ),
+    (
+        "lint.py",
+        "exclude の 4 文字下限を外す（短い除外が正答まで落とす）",
+        "    short = [v for v in normalized if len(v) < MIN_CONTAINS_LENGTH]",
+        "    short = []",
+    ),
+    (
+        "lint.py",
+        "exclude が期待値に含まれても通す（正答そのものが不正解になる）",
+        "    overlap = [b for b in normalized if any(w and b in w for w in wanted)]",
+        "    overlap = []",
+    ),
+    (
+        "lint.py",
+        "equals に exclude を書いても通す",
+        '    if mode != "contains":',
+        "    if False:",
     ),
     (
         "lint.py",

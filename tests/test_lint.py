@@ -252,6 +252,28 @@ def test_contains_checks_every_element_of_a_list() -> None:
     assert "contains_too_short" in _checks(case)
 
 
+def test_exclude_on_equals_is_rejected() -> None:
+    """``equals`` は回答全体の一致なので、exclude は要らない。"""
+    case = _answer(match="equals", expect="PINECONE-19", exclude="SPRUCE-91")
+    assert "exclude_requires_contains" in _checks(case)
+
+
+def test_exclude_with_a_short_string_is_rejected() -> None:
+    """短い除外は無関係な出力に含まれ、正答まで落ちる。"""
+    case = _answer(match="contains", expect="PINECONE-19", exclude="91")
+    assert "exclude_too_short" in _checks(case)
+
+
+def test_exclude_that_sits_inside_the_expect_is_rejected() -> None:
+    """除外が期待値の一部だと、正答そのものが不正解になる。"""
+    case = _answer(match="contains", expect="PINECONE-19", exclude="ＰＩＮＥＣＯＮＥ")
+    assert "exclude_overlaps_expect" in _checks(case)
+
+
+def test_exclude_of_a_distinct_decoy_passes() -> None:
+    assert lint([_answer(match="contains", expect="PINECONE-19", exclude="SPRUCE-91")]) == []
+
+
 def test_numeric_with_a_non_numeric_expect_is_rejected() -> None:
     case = _answer(kind="numeric", expect="たくさん", match=_DROP)
     assert "numeric_expect" in _checks(case)

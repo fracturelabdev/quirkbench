@@ -117,8 +117,12 @@ failure:
 
 score:
   kind: exact
-  # contains にする。モデルは文で返す（warehouse で実測）。
+  # contains のままにする。モデルは文で返す（warehouse で実測）。
+  # equals だと、符号は合っていても文で返した回答が落ち、
+  # 測るのが対応づけではなく出力の素っ気なさになる。
   # 期待値は 11 文字なので 4 文字下限を満たす。
   # 質問文と囮の符号にはこの文字列を含めない。1 回だけ現れる。
+  # 先頭の SPRUCE-91 は囮。正答と一緒に書いた回答は対応づけたことにしない。
   match: contains
   expect: PINECONE-19
+  exclude: SPRUCE-91
