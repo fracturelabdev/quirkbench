@@ -4,6 +4,8 @@
 # という取りこぼしは前の 2 課題には出ない。
 # 期待値は単位なしの整数なので、符号・ゼロ・単位の境界をプロンプトに書く。
 # キー名だけだと、度や % 付きの文字列が採点とずれる。
+# sample の期待値は B7 だが、本文は "Sample B7"。
+# 識別子だけにする指示を書く。無いと、試料名をそのまま入れた答えが完全一致で落ちる。
 # 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
 id: extract-sample-en
 dim: extract
@@ -17,6 +19,7 @@ prompt: |
   and operator.
   Write temperature, humidity, and weight as integers with no unit.
   Keep a negative number's minus sign, and write zero as 0.
+  Write sample as the identifier alone, without the word Sample.
 
   "Sample B7 is at -4 degrees, humidity 0 percent, and weighs 250 grams. The operator is Aoki."
 

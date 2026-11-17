@@ -446,8 +446,16 @@ def test_sample_keeps_zero_and_a_negative_number(case_id):
 
 
 def test_clinic_mid_lines_are_diverse_and_long_enough():
-    """同じ文の反復だと針が浮く。num_ctx の過半を使い、75% は超えない。"""
+    """符号が 2 つだけだと、先頭の囮を除いた残りが正答になり、中央を読まなくて済む。
+
+    各行に別の符号を置く。第 3 診療所への言及は先頭にもあるが、正答の符号は中央の 1 行だけ。
+    対訳は置かない。num_ctx の 65% から 75% に収める。
+    """
+    import re
+
     (case,) = [c for c in load_cases(Path("cases")) if c.id == "longctx-clinic-mid-ja"]
+    assert case.pair is None
+    assert case.lang == "ja"
     numbered = []
     for line in case.prompt.splitlines():
         text = line.strip()
@@ -458,29 +466,71 @@ def test_clinic_mid_lines_are_diverse_and_long_enough():
     assert case.prompt.count("PINECONE-19") == 1
     assert case.prompt.count("SPRUCE-91") == 1
     assert "特筆すべき事故の記載はなかった" not in case.prompt
+    codes = [re.findall(r"[A-Z]+-\d+", body) for body in numbered]
+    assert all(len(found) == 1 for found in codes)
+    flat = [found[0] for found in codes]
+    assert len(set(flat)) == len(flat)
+    assert len(set(flat) - {"SPRUCE-91"}) > 1
     pine = next(i for i, body in enumerate(numbered) if "PINECONE-19" in body)
     spruce = next(i for i, body in enumerate(numbered) if "SPRUCE-91" in body)
     assert spruce < 5
+    assert flat[spruce] == "SPRUCE-91"
     assert 20 < pine < len(numbered) - 20
+    assert flat[pine] == "PINECONE-19"
+    assert flat[-1] != "PINECONE-19"
+    mentions = [i for i, body in enumerate(numbered) if "第 3 診療所" in body]
+    assert len(mentions) >= 2
+    assert pine in mentions
+    assert spruce in mentions
+    assert "PINECONE-19" not in numbered[spruce]
+    duty = "第 3 診療所の当直符号は"
+    assert sum(duty in body for body in numbered) == 1
+    assert duty in numbered[pine]
     ratio = len(case.prompt) / case.options["num_ctx"]
     assert 0.65 <= ratio <= 0.75
 
 
 @pytest.mark.parametrize(
-    ("case_id", "needles"),
+    ("case_id", "needles", "copied_sample"),
     [
-        ("extract-sample-ja", ["単位を付けない整数", "符号を残", "0 は 0"]),
-        ("extract-sample-en", ["no unit", "minus sign", "write zero as 0"]),
+        (
+            "extract-sample-ja",
+            ["単位を付けない整数", "符号を残", "0 は 0", "「試料」という語を付けず"],
+            "試料 B7",
+        ),
+        (
+            "extract-sample-en",
+            ["no unit", "minus sign", "write zero as 0", "without the word Sample"],
+            "Sample B7",
+        ),
     ],
 )
-def test_sample_prompt_states_sign_zero_and_unit(case_id, needles):
-    """期待値は単位なしの整数。符号・ゼロ・単位の境界をプロンプトが言う。"""
+def test_sample_prompt_states_sign_zero_and_unit(case_id, needles, copied_sample):
+    """期待値は単位なしの整数。符号・ゼロ・単位と、sample が識別子だけであることを言う。
+
+    本文は「試料 B7」「Sample B7」なので、識別子だけの指示が無いと
+    試料名をそのまま入れた答えが完全一致で落ちる。
+    """
     (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
     for needle in needles:
         assert needle in case.prompt
     for key in ("temperature", "humidity", "weight"):
         assert isinstance(case.score["expect"][key], int)
         assert not isinstance(case.score["expect"][key], bool)
+    copied = dict(case.score["expect"], sample=copied_sample)
+    result = score(
+        parse(json.dumps(copied, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert "sample" in result.sub_metrics["expect_missed"]
+    assert result.score < 1.0
 
 
 def test_tool_shed_coverage_terms_reject_loose_substrings():
@@ -510,9 +560,24 @@ def test_tool_shed_coverage_terms_reject_loose_substrings():
         "Return the drill the next day.",
         "Bring back the drill the next day.",
         "Give back what you borrowed.",
+        "Bring it back tomorrow.",
+        "Give it back tomorrow.",
+        "Give it back.",
+        "Bring it back.",
     ):
         _, missed = _coverage([text], en)
         assert 0 not in missed, text
+    for text in (
+        "Return every tool unbroken.",
+        "Return every tool undamaged.",
+    ):
+        _, missed = _coverage([text], en)
+        assert 0 not in missed, text
+        assert 1 in missed, text
+    _, missed = _coverage(["Report any damage before leaving."], en)
+    assert 1 not in missed
+    _, missed = _coverage(["Replace the hammer if it is broken."], en)
+    assert 1 not in missed
     _, missed = _coverage(["Preserve the tools. They are irreplaceable."], en)
     assert 1 in missed
     assert 2 in missed
