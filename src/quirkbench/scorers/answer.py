@@ -56,6 +56,15 @@ def _expected(spec: dict[str, Any]) -> list[str]:
     return [normalize_answer(str(v)) for v in values]
 
 
+def _excluded(spec: dict[str, Any]) -> list[str]:
+    """``exclude`` は文字列か文字列のリスト。いずれかを含む回答は不正解。"""
+    value = spec.get("exclude")
+    if value is None:
+        return []
+    values = value if isinstance(value, list) else [value]
+    return [normalize_answer(str(v)) for v in values]
+
+
 def score_exact(
     parsed: Parsed, case: Case, *, executor: Executor | None, embedder: Embedder | None
 ) -> ScoreResult:
@@ -64,16 +73,23 @@ def score_exact(
     ``contains`` を置くのは `longctx` のため。長文に埋めた事実を問うと、
     モデルは「照合番号は MULBERRY-7 です」と文で返す（実測）。``equals`` だけだと、
     **測っているのは長文脈保持ではなく出力の素っ気なさ**になる。
+
+    ``exclude`` を置くのは、正答と囮が同じ文書にあるとき。``contains`` だけだと
+    両方を並べた回答も正解になる。正規化は ``expect`` と同じで、
+    いずれかの除外文字列を含めば不正解にする。
     """
     del executor, embedder
     spec: dict[str, Any] = case.score
     mode = str(spec.get("match", "equals"))
     payload = normalize_answer(parsed.payload)
     wanted = _expected(spec)
+    blocked = _excluded(spec)
 
     equals = payload in wanted
     contains = any(w and w in payload for w in wanted)
-    hit = contains if mode == "contains" else equals
+    excluded = any(b and b in payload for b in blocked)
+    matched = contains if mode == "contains" else equals
+    hit = matched and not excluded
 
     return ScoreResult(
         score=1.0 if hit else 0.0,
@@ -83,6 +99,7 @@ def score_exact(
             # 「答えは知っているが黙れない」を読めるようにするための診断値
             "bare_answer": equals,
             "contains_answer": contains,
+            "excluded": excluded,
             "answer_chars": len(payload),
         },
         tags=(),

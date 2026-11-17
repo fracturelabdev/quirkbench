@@ -1,0 +1,28 @@
+# reason 次元 — 上の ja 版の対訳。
+# `change` は代金を引いておつりを出す。`pencils` は余り。
+# こちらは時間を分に直してから引く。単位の変換が要る。
+# 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
+id: reason-recording-en
+dim: reason
+lang: en
+task: recording
+pair: reason-recording-ja
+
+prompt: |
+  Answer the following question. Output only the numeric answer.
+
+  A recording is 3 hours and 20 minutes long. You cut out 45 minutes of it.
+  How many minutes are left?
+
+options:
+  num_predict: 200
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: numeric
+  expect: 155
+  tolerance: 0

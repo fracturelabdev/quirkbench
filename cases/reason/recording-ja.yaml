@@ -1,0 +1,27 @@
+# reason 次元 — 3 つ目のタスク。
+# `change` は代金を引いておつりを出す。`pencils` は余り。
+# こちらは時間を分に直してから引く。単位の変換が要る。
+# 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
+id: reason-recording-ja
+dim: reason
+lang: ja
+task: recording
+pair: reason-recording-en
+
+prompt: |
+  次の問題に答えてください。答えの数値だけを出力してください。
+
+  録音は 3 時間 20 分です。そのうち 45 分を切り出しました。残りは何分ですか。
+
+options:
+  num_predict: 200
+
+failure:
+  format: none
+  language: none
+  min_tokens: 1
+
+score:
+  kind: numeric
+  expect: 155
+  tolerance: 0

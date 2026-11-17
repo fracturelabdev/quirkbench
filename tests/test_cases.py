@@ -98,6 +98,49 @@ def test_failure_typo_rejected():
         _build(failure={"format": "json", "min_token": 4})
 
 
+def test_exact_unknown_score_key_rejected():
+    """``exclude`` の typo は、囮を含む回答が静かに正解になる。"""
+    with pytest.raises(CaseError, match=r"未知の score キー"):
+        parse_case(
+            {
+                "id": "x",
+                "dim": "longctx",
+                "task": "t",
+                "lang": "ja",
+                "prompt": "p",
+                "failure": {"format": "none"},
+                "score": {
+                    "kind": "exact",
+                    "match": "contains",
+                    "expect": "PINECONE-19",
+                    "exlude": "SPRUCE-91",
+                },
+            },
+            Path("x.yaml"),
+        )
+
+
+def test_exact_exclude_must_be_nonempty_strings():
+    with pytest.raises(CaseError, match=r"score\.exclude"):
+        parse_case(
+            {
+                "id": "x",
+                "dim": "longctx",
+                "task": "t",
+                "lang": "ja",
+                "prompt": "p",
+                "failure": {"format": "none"},
+                "score": {
+                    "kind": "exact",
+                    "match": "contains",
+                    "expect": "PINECONE-19",
+                    "exclude": ["SPRUCE-91", ""],
+                },
+            },
+            Path("x.yaml"),
+        )
+
+
 def test_failure_unknown_format_rejected():
     with pytest.raises(CaseError, match=r"未知の failure\.format"):
         _build(failure={"format": "yaml"}, score={"kind": "exact"})
@@ -169,3 +212,341 @@ def test_real_cases_all_validate():
     """同梱ケースが検証を通ることを実ファイルで確認する。"""
     cases = load_cases(Path("cases"))
     assert {c.id for c in cases} >= {"instruct-json-profile-ja", "instruct-json-profile-en"}
+
+
+def test_bundled_pytest_references_pass_their_checks():
+    """参照解が自分のテストを通ることを、素の Python で確かめる。
+
+    隔離の自己診断は macOS の ``qb score`` が持つ。
+    ここは参照解とテストの食い違いだけを見る。CI に macOS は無い。
+    """
+    cases = load_cases(Path("cases"))
+    checked = 0
+    for case in cases:
+        if case.score.get("kind") != "pytest":
+            continue
+        ref_ns: dict[str, object] = {}
+        exec(case.score["reference"], ref_ns, ref_ns)
+        entry = str(case.score["entry_point"])
+        test_ns: dict[str, object] = {}
+        exec(case.score["test"], test_ns, test_ns)
+        check = test_ns["check"]
+        assert callable(check)
+        check(ref_ns[entry])
+        checked += 1
+    assert checked >= 1
+
+
+def test_contains_expect_appears_exactly_once():
+    """``contains`` の期待値がプロンプトに 1 回だけある。
+
+    0 回なら正解が本文に無い。2 回以上なら、質問や囮が期待値を含んでいて
+    そこを繰り返すだけで正解になる。
+    """
+    cases = load_cases(Path("cases"))
+    seen = 0
+    for case in cases:
+        if case.score.get("kind") != "exact" or case.score.get("match") != "contains":
+            continue
+        expect = case.score["expect"]
+        values = expect if isinstance(expect, list) else [expect]
+        for value in values:
+            assert case.prompt.count(str(value)) == 1, case.id
+        seen += 1
+    assert seen >= 1
+
+
+def test_declared_expect_is_a_perfect_answer():
+    """期待値そのものが、その採点器で満点になる。
+
+    参照解の実行は上のテストが見る。こちらは JSON・数値・完全一致で、
+    期待値の型や表記が採点器と食い違っていないことを見る。
+    """
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    cases = load_cases(Path("cases"))
+    checked = 0
+    for case in cases:
+        kind = case.score.get("kind")
+        raw = _perfect_answer(case.score)
+        if raw is None or kind not in {"json_schema", "json_keys", "exact", "numeric"}:
+            continue
+        result = score(parse(raw, case.failure), case, executor=None, embedder=None)
+        assert result.score == 1.0, case.id
+        checked += 1
+    assert checked >= 1
+
+
+@pytest.mark.parametrize("case_id", ["instruct-shift-ja", "instruct-shift-en"])
+def test_shift_rejects_keys_outside_the_four(case_id):
+    """``shift`` はキーを 4 つに限る指示なので、余分なキーを足した答えは満点にしない。"""
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    answer = dict(case.score["expect"], extra=True)
+    result = score(
+        parse(json.dumps(answer, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert result.score == 0.0
+    assert result.sub_metrics["schema_ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        ("PINECONE-19", 1.0),
+        ("第 3 診療所の当直符号は PINECONE-19 です。", 1.0),
+        ("SPRUCE-91 または PINECONE-19", 0.0),
+        ("PINECONE-19 または SPRUCE-91", 0.0),
+        ("ＳＰＲＵＣＥ－９１ または PINECONE-19", 0.0),
+        ("SPRUCE-91", 0.0),
+    ],
+)
+def test_clinic_mid_rejects_a_listed_decoy(answer: str, expected: float) -> None:
+    """第 3 診療所の符号を問う。正答だけなら正解、囮と並べたら不正解。
+
+    ``contains`` のまま、文で返した正答は通す。``equals`` にすると
+    出力の素っ気なさを測ることになる。囮の符号を含んだ回答だけを落とす。
+    全角の囮も正規化してから見る。
+    """
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == "longctx-clinic-mid-ja"]
+    result = score(parse(answer, case.failure), case, executor=None, embedder=None)
+    assert result.score == expected
+
+
+def _run_check(case, fn) -> None:
+    namespace: dict[str, object] = {}
+    exec(case.score["test"], namespace, namespace)
+    check = namespace["check"]
+    assert callable(check)
+    check(fn)
+
+
+def test_latest_rejects_a_prefix_and_the_seeded_comparison():
+    """最大は末尾と途中に置く。同点のあいだに小さい年を挟み、種まきした ``<`` を落とす。
+
+    最大が 2 件目だと、先頭 2 件だけ比べる実装が通る。
+    最大が端だけだと、先頭と末尾だけを比べる実装が通る。
+    同点だけの並びだと、``<`` も先に現れたほうを残して通る。
+    """
+    cases = [c for c in load_cases(Path("cases")) if c.task == "latest"]
+    assert len(cases) == 2
+
+    def seeded(records):
+        best_name, best_year = records[0]
+        for name, year in records[1:]:
+            if year < best_year:
+                best_name, best_year = name, year
+        return best_name
+
+    def prefix(records):
+        window = records[:2]
+        best_name, best_year = window[0]
+        for name, year in window[1:]:
+            if year > best_year:
+                best_name, best_year = name, year
+        return best_name
+
+    def later_tie(records):
+        best_name, best_year = records[0]
+        for name, year in records[1:]:
+            if year >= best_year:
+                best_name, best_year = name, year
+        return best_name
+
+    def ends_only(records):
+        return max((records[0], records[-1]), key=lambda record: record[1])[0]
+
+    for case in cases:
+        for fn in (seeded, prefix, later_tie, ends_only):
+            with pytest.raises(AssertionError):
+                _run_check(case, fn)
+
+
+def test_count_long_line_number_is_not_shared():
+    """常に同じ行番号を書くモデルが、別の code-read まで通らない。"""
+    cases = {c.id: c for c in load_cases(Path("cases"))}
+    expect = cases["code-read-count-long-ja"].score["expect"]
+    assert expect == cases["code-read-count-long-en"].score["expect"]
+    shared = {
+        cases["code-read-accumulate-ja"].score["expect"],
+        cases["code-read-accumulate-en"].score["expect"],
+        cases["code-read-off-by-one-ja"].score["expect"],
+        cases["code-read-off-by-one-en"].score["expect"],
+    }
+    assert expect not in shared
+    for case_id in ("code-read-count-long-ja", "code-read-count-long-en"):
+        bug_line = next(
+            line for line in cases[case_id].prompt.splitlines() if line.startswith(f"{expect}:")
+        )
+        assert ">" in bug_line
+        assert "len(" in bug_line
+
+
+@pytest.mark.parametrize("case_id", ["instruct-shift-ja", "instruct-shift-en"])
+def test_shift_schema_can_pass_while_the_value_is_wrong(case_id):
+    """schema を通る別の列挙値でも、expect と違えば満点にしない。"""
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    wrong_shift = "遅番" if case.lang == "ja" else "late"
+    answer = dict(case.score["expect"], shift=wrong_shift)
+    result = score(
+        parse(json.dumps(answer, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert result.sub_metrics["schema_ok"] is True
+    assert result.score < 1.0
+    assert "shift" in result.sub_metrics["expect_missed"]
+
+
+@pytest.mark.parametrize("case_id", ["extract-sample-ja", "extract-sample-en"])
+def test_sample_keeps_zero_and_a_negative_number(case_id):
+    """0 と負数は値として残る。符号を落とすと温度は不一致になる。"""
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    expect = case.score["expect"]
+    perfect = score(
+        parse(json.dumps(expect, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert perfect.score == 1.0
+    assert expect["humidity"] == 0
+    assert expect["temperature"] < 0
+
+    dropped_sign = dict(expect, temperature=abs(expect["temperature"]))
+    missed = score(
+        parse(json.dumps(dropped_sign, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert "temperature" in missed.sub_metrics["expect_missed"]
+
+
+def test_clinic_mid_lines_are_diverse_and_long_enough():
+    """同じ文の反復だと針が浮く。num_ctx の過半を使い、75% は超えない。"""
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == "longctx-clinic-mid-ja"]
+    numbered = []
+    for line in case.prompt.splitlines():
+        text = line.strip()
+        if text[:1].isdigit() and ". " in text:
+            numbered.append(text.split(". ", 1)[1])
+    assert len(numbered) >= 90
+    assert len(set(numbered)) == len(numbered)
+    assert case.prompt.count("PINECONE-19") == 1
+    assert case.prompt.count("SPRUCE-91") == 1
+    assert "特筆すべき事故の記載はなかった" not in case.prompt
+    pine = next(i for i, body in enumerate(numbered) if "PINECONE-19" in body)
+    spruce = next(i for i, body in enumerate(numbered) if "SPRUCE-91" in body)
+    assert spruce < 5
+    assert 20 < pine < len(numbered) - 20
+    ratio = len(case.prompt) / case.options["num_ctx"]
+    assert 0.65 <= ratio <= 0.75
+
+
+@pytest.mark.parametrize(
+    ("case_id", "needles"),
+    [
+        ("extract-sample-ja", ["単位を付けない整数", "符号を残", "0 は 0"]),
+        ("extract-sample-en", ["no unit", "minus sign", "write zero as 0"]),
+    ],
+)
+def test_sample_prompt_states_sign_zero_and_unit(case_id, needles):
+    """期待値は単位なしの整数。符号・ゼロ・単位の境界をプロンプトが言う。"""
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    for needle in needles:
+        assert needle in case.prompt
+    for key in ("temperature", "humidity", "weight"):
+        assert isinstance(case.score["expect"][key], int)
+        assert not isinstance(case.score["expect"][key], bool)
+
+
+def test_tool_shed_coverage_terms_reject_loose_substrings():
+    """短い部分文字列は外し、日英で返却の言い回しが当たるようにする。"""
+    from quirkbench.scorers.ideate import _coverage
+
+    cases = {c.id: c for c in load_cases(Path("cases"))}
+    en = cases["ideate-tool-shed-en"].score["coverage_terms"]
+    ja = cases["ideate-tool-shed-ja"].score["coverage_terms"]
+    en_words = [word for group in en for word in group]
+    ja_words = [word for group in ja for word in group]
+    assert "back" not in en_words
+    assert "reserve" not in en_words
+    assert "replace" not in en_words
+    assert "壊" not in ja_words
+    assert all(len(word) >= 4 for word in en_words)
+    assert all(len(word) >= 2 for word in ja_words)
+
+    for text in (
+        "Keep a backup in the back of the shed.",
+        "Give background information.",
+        "Move the input backlog to the shelf.",
+    ):
+        _, missed = _coverage([text], en)
+        assert 0 in missed, text
+    for text in (
+        "Return the drill the next day.",
+        "Bring back the drill the next day.",
+        "Give back what you borrowed.",
+    ):
+        _, missed = _coverage([text], en)
+        assert 0 not in missed, text
+    _, missed = _coverage(["Preserve the tools. They are irreplaceable."], en)
+    assert 1 in missed
+    assert 2 in missed
+
+    for text in ("工具は返す。", "借りた工具は返さなければならない。", "工具は返すべきだ。"):
+        _, missed = _coverage([text], ja)
+        assert 0 not in missed, text
+    _, missed = _coverage(["決壊や崩壊や破壊の話は規則ではない。"], ja)
+    assert 1 in missed
+    _, missed = _coverage(["壊したら修理する。"], ja)
+    assert 1 not in missed
+
+
+def _perfect_answer(spec: dict) -> str | None:
+    """ケースの expect から、採点器が満点を付けるべき文字列を作る。作れなければ None。"""
+    import json
+
+    kind = spec.get("kind")
+    expect = spec.get("expect")
+    if kind == "json_keys" and isinstance(expect, dict):
+        return json.dumps(expect, ensure_ascii=False)
+    if kind == "json_schema" and isinstance(expect, dict):
+        required = set((spec.get("schema") or {}).get("required") or [])
+        # occupation のように、正解が一意でないキーは expect に入れない。
+        # そのケースはここからは満点の形を復元できない
+        if not required <= set(expect):
+            return None
+        return json.dumps(expect, ensure_ascii=False)
+    if kind == "numeric":
+        return str(expect)
+    if kind == "exact":
+        values = expect if isinstance(expect, list) else [expect]
+        text = str(values[0])
+        if spec.get("match") == "contains":
+            return f"答えは {text} です"
+        return text
+    return None

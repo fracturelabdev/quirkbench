@@ -1,0 +1,47 @@
+# instruct 次元 — 3 つ目のタスク。
+# `json-profile` はキーを訳さずに値を埋める課題、`tags` は列挙値・配列の件数・真偽値。
+# こちらは列挙値に加えて、整数の上下限と文字列の長さ。配列も真偽値も置かない。
+# 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
+id: instruct-shift-ja
+dim: instruct
+lang: ja
+task: shift
+pair: instruct-shift-en
+
+prompt: |
+  次の勤務メモを JSON で出力してください。JSON 以外は書かないでください。
+  キー名は英語のままにしてください。
+
+  「早番の担当は森です。開始は 6 時、休憩は 45 分です。」
+
+  出力するキーは次の 4 つです。
+  - shift: "早番" "遅番" "夜番" のいずれか 1 つ
+  - lead: 担当の姓。1 文字以上 16 文字以下
+  - start_hour: 0 以上 23 以下の整数
+  - break_minutes: 0 以上 90 以下の整数
+
+options:
+  num_predict: 256
+
+failure:
+  format: json
+  extract: fenced_or_first_object
+  language: none
+  min_tokens: 4
+
+score:
+  kind: json_schema
+  schema:
+    type: object
+    required: [shift, lead, start_hour, break_minutes]
+    additionalProperties: false
+    properties:
+      shift: {type: string, enum: [早番, 遅番, 夜番]}
+      lead: {type: string, minLength: 1, maxLength: 16}
+      start_hour: {type: integer, minimum: 0, maximum: 23}
+      break_minutes: {type: integer, minimum: 0, maximum: 90}
+  expect:
+    shift: 早番
+    lead: 森
+    start_hour: 6
+    break_minutes: 45
