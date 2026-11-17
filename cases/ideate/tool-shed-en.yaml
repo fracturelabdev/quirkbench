@@ -5,6 +5,11 @@
 # 難度は手元のモデルで未測定。
 # 当たり語は部分一致。`back` 単体は backup / background / in the back に当たる。
 # `give back` も give background の先頭になるので、後ろに語を足した句だけを置く。
+# `give it back.` のように末尾のピリオドまで含めると、`Bring it back tomorrow.` が漏れる。
+# 文末はピリオド、続きがある形は空白で止める。
+# `damage` は undamaged に、`broken` は unbroken に含まれる。
+# `Return every tool unbroken.` のような返却の文が、破損の軸に当たってしまう。
+# 否定の un が付いた語の中に埋まらない句だけを置く。
 # `reserve` は preserve に、`replace` は irreplaceable に含まれるので置かない。
 id: ideate-tool-shed-en
 dim: ideate
@@ -30,6 +35,6 @@ score:
   count: {n: 5, pattern: numbered_list}
   topic: rules for residents borrowing tools from a shared neighbourhood shed
   coverage_terms:
-    - [return, "give back the", "give back a", "give back all", "give back what", "give back your", "bring back the", "bring back a", "bring back all", "bring back what", "bring back your", "give it back.", "bring it back.", "give them back.", "bring them back."]
-    - [damage, broken, repair, "replace the", "replace a", "replace it", "replace them", replaced, replacing, replacement]
+    - [return, "give back the", "give back a", "give back all", "give back what", "give back your", "bring back the", "bring back a", "bring back all", "bring back what", "bring back your", "give it back ", "give it back.", "bring it back ", "bring it back.", "give them back ", "give them back.", "bring them back ", "bring them back."]
+    - ["is damaged", "are damaged", "was damaged", "were damaged", "get damaged", "gets damaged", "any damage", "the damage", "damage to", "is broken", "are broken", "was broken", "were broken", "get broken", "gets broken", "a broken", "any broken", "if broken", repair, "replace the", "replace a", "replace it", "replace them", replaced, replacing, replacement]
     - [booking, schedule, queue]
