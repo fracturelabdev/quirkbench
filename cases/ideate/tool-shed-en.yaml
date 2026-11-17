@@ -3,8 +3,9 @@
 # こちらは規則（義務・禁止の文）。短い固有名詞は足さない。
 # 命名課題の脱線ゲートは順序が逆転しており、同じ型を足しても分離できない。
 # 難度は手元のモデルで未測定。
-# 当たり語は部分一致。`back` は backup / background / in the back にも当たる。
-# 返却は return だけにする。JA の返し・返却・戻すより緩くしない。
+# 当たり語は部分一致。`back` 単体は backup / background / in the back に当たる。
+# `give back` も give background の先頭になるので、後ろに語を足した句だけを置く。
+# `reserve` は preserve に、`replace` は irreplaceable に含まれるので置かない。
 id: ideate-tool-shed-en
 dim: ideate
 lang: en
@@ -29,6 +30,6 @@ score:
   count: {n: 5, pattern: numbered_list}
   topic: rules for residents borrowing tools from a shared neighbourhood shed
   coverage_terms:
-    - [return]
-    - [damage, broken, repair, replace]
-    - [reserve, schedule, queue]
+    - [return, "give back the", "give back a", "give back all", "give back what", "give back your", "bring back the", "bring back a", "bring back all", "bring back what", "bring back your", "give it back.", "bring it back.", "give them back.", "bring them back."]
+    - [damage, broken, repair, "replace the", "replace a", "replace it", "replace them", replaced, replacing, replacement]
+    - [booking, schedule, queue]

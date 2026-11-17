@@ -2,7 +2,7 @@
 # `median` は偶数個の分岐漏れ、`vowels` は大文字の条件漏れ。
 # こちらは比較の向きが逆で、最大を取るべきところで最小を取る。
 # 同点のときは先に現れたほうを返す。`>=` に直すと後ろの同点が勝ってしまう。
-# 最大は末尾に置く。先頭 2 件だけ比べる実装では通らない。
+# 最大は末尾と途中の両方に置く。先頭 2 件だけ、先頭と末尾だけでは通らない。
 # 同点のあいだに小さい年を挟む。種まきした `<` はそこに乗り換えて戻らない。
 # 難度は手元のモデルで未測定。floor / ceiling なら捨てる。
 id: code-fix-latest-en
@@ -40,6 +40,7 @@ score:
   test: |
     def check(candidate):
         assert candidate([("aya", 1990), ("mei", 2001), ("rin", 1995), ("yui", 2010)]) == "yui"
+        assert candidate([("aya", 1990), ("mei", 2004), ("rin", 2012), ("yui", 2001)]) == "rin"
         assert candidate([("aya", 2001), ("mei", 1990), ("rin", 2001)]) == "aya"
         assert candidate([("rin", 1980)]) == "rin"
   reference: |

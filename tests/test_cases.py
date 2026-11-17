@@ -333,9 +333,10 @@ def _run_check(case, fn) -> None:
 
 
 def test_latest_rejects_a_prefix_and_the_seeded_comparison():
-    """最大は末尾に置く。同点のあいだに小さい年を挟み、種まきした ``<`` を落とす。
+    """最大は末尾と途中に置く。同点のあいだに小さい年を挟み、種まきした ``<`` を落とす。
 
     最大が 2 件目だと、先頭 2 件だけ比べる実装が通る。
+    最大が端だけだと、先頭と末尾だけを比べる実装が通る。
     同点だけの並びだと、``<`` も先に現れたほうを残して通る。
     """
     cases = [c for c in load_cases(Path("cases")) if c.task == "latest"]
@@ -363,8 +364,11 @@ def test_latest_rejects_a_prefix_and_the_seeded_comparison():
                 best_name, best_year = name, year
         return best_name
 
+    def ends_only(records):
+        return max((records[0], records[-1]), key=lambda record: record[1])[0]
+
     for case in cases:
-        for fn in (seeded, prefix, later_tie):
+        for fn in (seeded, prefix, later_tie, ends_only):
             with pytest.raises(AssertionError):
                 _run_check(case, fn)
 
@@ -389,6 +393,79 @@ def test_count_long_line_number_is_not_shared():
         assert "len(" in bug_line
 
 
+@pytest.mark.parametrize("case_id", ["instruct-shift-ja", "instruct-shift-en"])
+def test_shift_schema_can_pass_while_the_value_is_wrong(case_id):
+    """schema を通る別の列挙値でも、expect と違えば満点にしない。"""
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    wrong_shift = "遅番" if case.lang == "ja" else "late"
+    answer = dict(case.score["expect"], shift=wrong_shift)
+    result = score(
+        parse(json.dumps(answer, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert result.sub_metrics["schema_ok"] is True
+    assert result.score < 1.0
+    assert "shift" in result.sub_metrics["expect_missed"]
+
+
+@pytest.mark.parametrize("case_id", ["extract-sample-ja", "extract-sample-en"])
+def test_sample_keeps_zero_and_a_negative_number(case_id):
+    """0 と負数は値として残る。符号を落とすと温度は不一致になる。"""
+    import json
+
+    from quirkbench.parse import parse
+    from quirkbench.scorers import score
+
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == case_id]
+    expect = case.score["expect"]
+    perfect = score(
+        parse(json.dumps(expect, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert perfect.score == 1.0
+    assert expect["humidity"] == 0
+    assert expect["temperature"] < 0
+
+    dropped_sign = dict(expect, temperature=abs(expect["temperature"]))
+    missed = score(
+        parse(json.dumps(dropped_sign, ensure_ascii=False), case.failure),
+        case,
+        executor=None,
+        embedder=None,
+    )
+    assert "temperature" in missed.sub_metrics["expect_missed"]
+
+
+def test_clinic_mid_lines_are_diverse_and_long_enough():
+    """同じ文の反復だと針が浮く。num_ctx の過半を使い、75% は超えない。"""
+    (case,) = [c for c in load_cases(Path("cases")) if c.id == "longctx-clinic-mid-ja"]
+    numbered = []
+    for line in case.prompt.splitlines():
+        text = line.strip()
+        if text[:1].isdigit() and ". " in text:
+            numbered.append(text.split(". ", 1)[1])
+    assert len(numbered) >= 90
+    assert len(set(numbered)) == len(numbered)
+    assert case.prompt.count("PINECONE-19") == 1
+    assert case.prompt.count("SPRUCE-91") == 1
+    assert "特筆すべき事故の記載はなかった" not in case.prompt
+    pine = next(i for i, body in enumerate(numbered) if "PINECONE-19" in body)
+    spruce = next(i for i, body in enumerate(numbered) if "SPRUCE-91" in body)
+    assert spruce < 5
+    assert 20 < pine < len(numbered) - 20
+    ratio = len(case.prompt) / case.options["num_ctx"]
+    assert 0.65 <= ratio <= 0.75
+
+
 @pytest.mark.parametrize(
     ("case_id", "needles"),
     [
@@ -407,7 +484,7 @@ def test_sample_prompt_states_sign_zero_and_unit(case_id, needles):
 
 
 def test_tool_shed_coverage_terms_reject_loose_substrings():
-    """``back`` は返却以外に当たり、``壊`` 1 文字は破壊・崩壊・決壊に当たる。"""
+    """短い部分文字列は外し、日英で返却の言い回しが当たるようにする。"""
     from quirkbench.scorers.ideate import _coverage
 
     cases = {c.id: c for c in load_cases(Path("cases"))}
@@ -416,15 +493,33 @@ def test_tool_shed_coverage_terms_reject_loose_substrings():
     en_words = [word for group in en for word in group]
     ja_words = [word for group in ja for word in group]
     assert "back" not in en_words
+    assert "reserve" not in en_words
+    assert "replace" not in en_words
     assert "壊" not in ja_words
     assert all(len(word) >= 4 for word in en_words)
     assert all(len(word) >= 2 for word in ja_words)
 
-    _, missed = _coverage(["Keep a backup in the back of the shed."], en)
-    assert 0 in missed
-    _, missed = _coverage(["Return the drill the next day."], en)
-    assert 0 not in missed
+    for text in (
+        "Keep a backup in the back of the shed.",
+        "Give background information.",
+        "Move the input backlog to the shelf.",
+    ):
+        _, missed = _coverage([text], en)
+        assert 0 in missed, text
+    for text in (
+        "Return the drill the next day.",
+        "Bring back the drill the next day.",
+        "Give back what you borrowed.",
+    ):
+        _, missed = _coverage([text], en)
+        assert 0 not in missed, text
+    _, missed = _coverage(["Preserve the tools. They are irreplaceable."], en)
+    assert 1 in missed
+    assert 2 in missed
 
+    for text in ("工具は返す。", "借りた工具は返さなければならない。", "工具は返すべきだ。"):
+        _, missed = _coverage([text], ja)
+        assert 0 not in missed, text
     _, missed = _coverage(["決壊や崩壊や破壊の話は規則ではない。"], ja)
     assert 1 in missed
     _, missed = _coverage(["壊したら修理する。"], ja)
